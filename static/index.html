@@ -1,0 +1,92 @@
+<!--#static/index.html-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Helpdesk - Incident Management</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎫 IT Helpdesk Assistant</h1>
+            <p class="subtitle">Report technical issues and get help</p>
+            <button class="clear-session-btn" onclick="clearSession()" title="Clear session and start fresh">
+                🔄 Clear Session
+            </button>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        <p>Hello! I'm your IT helpdesk assistant. I'm here to help you report technical issues.</p>
+                        <p>I can assist with:</p>
+                        <ul>
+                            <li>Email problems (Outlook, access issues)</li>
+                            <li>Network connectivity (VPN, WiFi)</li>
+                            <li>Password resets</li>
+                            <li>Software installation requests</li>
+                            <li>Shared drive access</li>
+                            <li>System performance issues</li>
+                        </ul>
+                        <p>What issue are you experiencing today?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <textarea
+                    id="userInput"
+                    class="chat-input"
+                    placeholder="Describe your issue here..."
+                    rows="3"
+                ></textarea>
+                <button id="sendButton" class="send-button">
+                    <span>Send</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-item">
+                <span class="info-label">Session ID:</span>
+                <span class="info-value" id="sessionId">Not started</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Current Incident:</span>
+                <span class="info-value" id="currentIncident">None</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Status:</span>
+                <span class="info-value" id="incidentStatus">-</span>
+            </div>
+            <div class="info-item">
+                <button class="history-btn" onclick="viewHistory()" title="View session history">
+                    📜 View History
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session History Modal -->
+    <div id="historyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Session History</h2>
+                <span class="close" onclick="closeHistoryModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="historyModalBody">
+                <p class="loading">Loading history...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

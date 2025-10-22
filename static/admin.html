@@ -1,0 +1,84 @@
+<!--#admin.html-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Incident Management</title>
+    <link rel="stylesheet" href="/static/admin-style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="header">
+            <h1>🔧 Admin Panel - Incident Management</h1>
+            <div class="header-actions">
+                <button class="btn-refresh" onclick="loadIncidents()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value" id="totalIncidents">0</div>
+                <div class="stat-label">Total Incidents</div>
+            </div>
+            <div class="stat-card stat-pending">
+                <div class="stat-value" id="pendingIncidents">0</div>
+                <div class="stat-label">Pending Info</div>
+            </div>
+            <div class="stat-card stat-open">
+                <div class="stat-value" id="openIncidents">0</div>
+                <div class="stat-label">Open</div>
+            </div>
+            <div class="stat-card stat-approval">
+                <div class="stat-value" id="approvalIncidents">0</div>
+                <div class="stat-label">Need Approval</div>
+            </div>
+            <div class="stat-card stat-resolved">
+                <div class="stat-value" id="resolvedIncidents">0</div>
+                <div class="stat-label">Resolved</div>
+            </div>
+        </div>
+
+        <div class="filters-container">
+            <label>
+                <span>Filter by Status:</span>
+                <select id="statusFilter" onchange="filterIncidents()">
+                    <option value="">All Incidents</option>
+                    <option value="pending_info">Pending Info</option>
+                    <option value="open">Open</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </label>
+            <label>
+                <input type="checkbox" id="approvalFilter" onchange="filterIncidents()">
+                <span>Show Only Needs KB Approval</span>
+            </label>
+        </div>
+
+        <div class="incidents-container">
+            <h2>Incidents</h2>
+            <div id="incidentsList" class="incidents-list">
+                <p class="loading">Loading incidents...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for incident details -->
+    <div id="incidentModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="/static/admin-script.js"></script>
+</body>
+</html>
+

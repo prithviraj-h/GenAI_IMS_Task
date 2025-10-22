@@ -1,0 +1,82 @@
+----------------------------------------------
+[KB_ID: 1]
+Use Case: Outlook Not Opening
+Required Info:
+  - Operating System (Windows/Mac/Linux)
+  - Account Type (Office365/Exchange/IMAP)
+  - Error Message (if any)
+Solution Steps:
+  - Verify internet connectivity.
+  - Check Outlook version and apply latest updates.
+  - Clear Outlook cache and restart system.
+  - If issue persists, reconfigure Outlook profile with account details.
+  - Escalate to email server admin if authentication issue continues.
+--------------------------------------------------
+[KB_ID: 2]
+Use Case: VPN Connection Failure
+Required Info:
+  - VPN Client Type (Cisco/GlobalProtect/etc.)
+  - Device OS
+  - Network Type (Home/Office/Public)
+  - Error Code (if any)
+Solution Steps:
+  - Verify network connection (Wi-Fi/LAN working).
+  - Restart VPN client and check for updates.
+  - Clear saved credentials and retry login.
+  - Check firewall rules and port availability.
+  - Escalate to network security team if issue persists.
+--------------------------------------------------
+[KB_ID: 3]
+Use Case: Password Reset Request
+Required Info:
+  - User ID or Email Address
+  - System/Application Name (AD/Office365/etc.)
+Solution Steps:
+  - Verify user identity via MFA or security questions.
+  - Reset password using Active Directory or relevant system API.
+  - Share temporary password with user securely.
+  - Ask user to reset password on first login.
+  - Close incident after confirmation from user.
+--------------------------------------------------
+[KB_ID: 4]
+Use Case: Shared Drive Access Request
+Required Info:
+  - Folder Path
+  - Access Type (Read/Write/Full Control)
+  - Business Justification
+  - Manager Approval (Yes/No)
+Solution Steps:
+  - Validate user eligibility and business need.
+  - Obtain manager approval if required.
+  - Add user permissions via Active Directory or file server settings.
+  - Notify user of granted access.
+  - Document changes for audit compliance.
+--------------------------------------------------
+[KB_ID: 5]
+Use Case: Software Installation Request
+Required Info:
+  - Software Name and Version
+  - Device Name/ID
+  - License Availability
+  - Business Justification
+Solution Steps:
+  - Validate if the software is approved in the organization catalog.
+  - Check license availability or purchase requirement.
+  - Deploy software using SCCM or Intune package.
+  - Verify installation and perform smoke test.
+  - Update user and close the incident.
+--------------------------------------------------
+[KB_ID: 6]
+Use Case: Slow System Performance
+Required Info:
+  - Device ID or Hostname
+  - Operating System
+  - Duration of Issue
+  - Applications Running
+Solution Steps:
+  - Check CPU, Memory, and Disk usage in Task Manager/Resource Monitor.
+  - Clear temporary files and run disk cleanup.
+  - Check for malware or unwanted background processes.
+  - Apply pending OS and driver updates.
+  - Escalate to hardware team if issue persists after optimization.
+--------------------------------------------------
