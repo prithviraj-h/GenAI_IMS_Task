@@ -279,3 +279,54 @@ Respond in JSON format:
     "reasoning": "brief explanation",
     "requires_clarification": true/false
 }}"""
+# Add these new prompts at the end of utils/prompts.py
+
+PREVIOUS_SOLUTION_QUERY_PROMPT = """The user is asking about a previous incident or solution.
+
+User Message: {user_input}
+
+Conversation History:
+{conversation_history}
+
+Context:
+- User may be asking about status, solution, or wanting to continue
+- If they mention an incident ID, use it
+- If not, politely ask for the incident ID
+
+Generate a response that:
+1. Acknowledges their query about previous incident
+2. If no incident ID mentioned, ask for it politely
+3. If incident ID found, confirm you'll retrieve it
+4. Be helpful and professional
+
+Provide only the response text, no JSON."""
+
+
+INCIDENT_SELECTION_PROMPT = """The user needs to select which incident to discuss after choosing KEEP.
+
+Active Incidents:
+{active_incidents}
+
+Generate a response that:
+1. Lists all active incidents
+2. Asks user to provide the specific Incident ID they want to discuss
+3. Mention the format (e.g., INC20251022150744)
+4. Be clear and concise
+
+Provide only the response text, no JSON."""
+
+
+CONTINUE_FROM_STOPPED_PROMPT = """Continue the incident conversation from where it previously stopped.
+
+Incident Details:
+{incident_details}
+
+Last Conversation:
+{last_conversation}
+
+Missing Information:
+{missing_info}
+
+Generate the next question to continue gathering information. Reference the context naturally and ask for the next piece of required information.
+
+Provide only the question text, no JSON."""

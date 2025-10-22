@@ -119,6 +119,16 @@ class ChromaDBClient:
         except Exception as e:
             logger.error(f"Error getting all KB entries: {e}")
             return []
+        
+    def delete_entry(self, kb_id: str) -> bool:
+        """Delete a KB entry from ChromaDB"""
+        try:
+            self.collection.delete(ids=[kb_id])
+            logger.info(f"Deleted KB entry: {kb_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting KB entry: {e}")
+            return False
 
 
 # Global ChromaDB client instance

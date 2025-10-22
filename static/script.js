@@ -132,6 +132,8 @@ function addMessage(text, type) {
 }
 
 function addMessageWithButtons(text, type, buttons) {
+    console.log('Adding message with buttons:', buttons); // Debug log
+    
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}-message`;
     
@@ -145,15 +147,51 @@ function addMessageWithButtons(text, type, buttons) {
     // Create button container
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'action-buttons-container';
+    buttonContainer.style.marginTop = '15px';
+    buttonContainer.style.paddingTop = '15px';
+    buttonContainer.style.borderTop = '1px solid #e0e0e0';
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '12px';
+    buttonContainer.style.flexWrap = 'wrap';
     
     // Add buttons
-    buttons.forEach(button => {
+    buttons.forEach((button, index) => {
+        console.log(`Creating button ${index}:`, button); // Debug log
+        
         const btn = document.createElement('button');
         btn.textContent = button.label;
         btn.className = 'action-button';
-        btn.dataset.value = button.value;
+        btn.setAttribute('data-value', button.value);
+        
+        // Inline styles as fallback
+        btn.style.padding = '12px 24px';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '10px';
+        btn.style.fontSize = '15px';
+        btn.style.fontWeight = '600';
+        btn.style.cursor = 'pointer';
+        btn.style.transition = 'all 0.3s ease';
+        btn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
+        btn.style.textTransform = 'uppercase';
+        btn.style.letterSpacing = '0.5px';
+        btn.style.color = 'white';
+        
+        // Set gradient based on value
+        if (button.value.toLowerCase().includes('keep')) {
+            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        } else if (button.value.toLowerCase().includes('ignore')) {
+            btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+        } else if (button.value.toLowerCase().includes('track')) {
+            btn.style.background = 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)';
+        } else if (button.value.toLowerCase().includes('create')) {
+            btn.style.background = 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)';
+        } else {
+            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }
         
         btn.onclick = function() {
+            console.log('Button clicked:', button.value); // Debug log
+            
             // Disable all buttons after click
             const allButtons = buttonContainer.querySelectorAll('.action-button');
             allButtons.forEach(b => b.disabled = true);
@@ -161,6 +199,18 @@ function addMessageWithButtons(text, type, buttons) {
             // Send the button value as message
             userInput.value = button.value;
             sendMessage();
+        };
+        
+        btn.onmouseover = function() {
+            btn.style.transform = 'translateY(-2px)';
+            btn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.25)';
+        };
+        
+        btn.onmouseout = function() {
+            if (!btn.disabled) {
+                btn.style.transform = 'translateY(0)';
+                btn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
+            }
         };
         
         buttonContainer.appendChild(btn);

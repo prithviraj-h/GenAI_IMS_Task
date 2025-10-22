@@ -89,9 +89,9 @@ class MongoDBClient:
             return []
     
     def get_all_incidents(self) -> List[Dict[str, Any]]:
-        """Get all incidents"""
+        """Get all incidents sorted by creation date (newest first)"""
         try:
-            incidents = list(self.incidents_collection.find({}))
+            incidents = list(self.incidents_collection.find({}).sort("created_on", -1))
             for incident in incidents:
                 if '_id' in incident:
                     incident['_id'] = str(incident['_id'])
@@ -101,15 +101,27 @@ class MongoDBClient:
             return []
     
     def get_incidents_by_status(self, status: str) -> List[Dict[str, Any]]:
-        """Get incidents by status"""
+        """Get incidents by status sorted by creation date (newest first)"""
         try:
-            incidents = list(self.incidents_collection.find({"status": status}))
+            incidents = list(self.incidents_collection.find({"status": status}).sort("created_on", -1))
             for incident in incidents:
                 if '_id' in incident:
                     incident['_id'] = str(incident['_id'])
             return incidents
         except Exception as e:
             logger.error(f"Error getting incidents by status: {e}")
+            return []
+    
+    def get_incidents_by_filter(self, filter_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get incidents by filter sorted by creation date (newest first)"""
+        try:
+            incidents = list(self.incidents_collection.find(filter_dict).sort("created_on", -1))
+            for incident in incidents:
+                if '_id' in incident:
+                    incident['_id'] = str(incident['_id'])
+            return incidents
+        except Exception as e:
+            logger.error(f"Error getting incidents: {e}")
             return []
     
     def get_incidents_by_session(self, session_id: str) -> List[Dict[str, Any]]:

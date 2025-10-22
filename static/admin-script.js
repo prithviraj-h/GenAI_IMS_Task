@@ -54,12 +54,16 @@ function displayIncidents(incidents) {
         return;
     }
     
-    container.innerHTML = incidents.map(incident => `
-        <div class="incident-card" data-incident-id="${incident.incident_id}">
+    container.innerHTML = incidents.map((incident, index) => {
+        const isNew = isIncidentNew(incident);
+        const newBadge = isNew ? '<span class="new-incident-badge">NEW</span>' : '';
+        
+        return `
+        <div class="incident-card ${isNew ? 'new-incident' : ''}" data-incident-id="${incident.incident_id}">
             <div class="incident-header">
                 <div>
                     <h3 class="incident-id" onclick="viewIncident('${incident.incident_id}')">
-                        ${incident.incident_id}
+                        ${incident.incident_id} ${newBadge}
                     </h3>
                     <p class="incident-use-case">${incident.use_case || incident.user_demand}</p>
                 </div>
@@ -95,13 +99,35 @@ function displayIncidents(incidents) {
                     : ''}
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleString();
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) {
+        return 'Today, ' + date.toLocaleTimeString();
+    } else if (diffDays === 2) {
+        return 'Yesterday, ' + date.toLocaleTimeString();
+    } else if (diffDays <= 7) {
+        return `${diffDays - 1} days ago`;
+    } else {
+        return date.toLocaleString();
+    }
+}
+
+function isIncidentNew(incident) {
+    if (!incident.created_on) return false;
+    const created = new Date(incident.created_on);
+    const now = new Date();
+    const diffTime = now - created;
+    const diffHours = diffTime / (1000 * 60 * 60);
+    return diffHours < 24; // Consider new if created within last 24 hours
 }
 
 function filterIncidents() {
@@ -127,7 +153,86 @@ async function viewIncident(incidentId) {
         alert('Error loading incident details');
     }
 }
+// Add this function
 
+
+// Add this to display Chroma entries with delete buttons
+// Add these functions to admin-script.js
+
+async function viewChromaEntries() {
+    try {
+        const response = await fetch('/api/admin/chroma/entries');
+        const data = await response.json();
+        
+        const modal = document.getElementById('incidentModal');
+        const modalBody = document.getElementById('modalBody');
+        
+        let content = `<h2>📚 ChromaDB Knowledge Base Entries</h2>`;
+        content += `<p class="info-note">Total: ${data.total} entries - These are used for semantic search</p>`;
+        content += `<div class="chroma-entries-list">`;
+        
+        if (data.entries && data.entries.length > 0) {
+            data.entries.forEach(entry => {
+                content += `
+                    <div class="chroma-entry-card">
+                        <div class="chroma-entry-header">
+                            <h4>${entry.id}</h4>
+                            <button class="btn-delete" onclick="deleteChromaEntry('${entry.id}')">🗑️ Delete</button>
+                        </div>
+                        <div class="chroma-entry-content">
+                            <p><strong>Use Case:</strong> ${entry.metadata.use_case}</p>
+                            <p><strong>Required Info:</strong> ${entry.metadata.required_info}</p>
+                            <p><strong>Solution Steps Preview:</strong> ${entry.metadata.solution_steps.substring(0, 100)}...</p>
+                            <p><strong>Questions:</strong> ${entry.metadata.questions}</p>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            content += `<p class="no-data">No KB entries found in ChromaDB.</p>`;
+        }
+        
+        content += `</div>`;
+        modalBody.innerHTML = content;
+        modal.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error loading Chroma entries:', error);
+        alert('Error loading KB entries');
+    }
+}
+
+async function deleteChromaEntry(kbId) {
+    if (!confirm(`Are you sure you want to delete KB entry: ${kbId}?\n\nThis will remove it from the semantic search database and cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/chroma/entries/${kbId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('✅ KB entry deleted successfully!');
+            // Close modal and reload
+            closeModal();
+            // Optionally reload the Chroma entries view
+            // viewChromaEntries();
+        } else {
+            const error = await response.json();
+            alert(`❌ Error: ${error.detail || 'Failed to delete KB entry'}`);
+        }
+    } catch (error) {
+        console.error('Error deleting Chroma entry:', error);
+        alert('❌ Error deleting KB entry. Please try again.');
+    }
+}
+
+// Add a button to admin UI to view Chroma entries
+// Add this to your admin.html in the header-actions div:
+// <button class="btn-refresh" onclick="viewChromaEntries()" style="margin-left: 10px;">
+//     📚 View KB Entries
+// </button>
 function showIncidentModal(incident) {
     const modal = document.getElementById('incidentModal');
     const modalBody = document.getElementById('modalBody');

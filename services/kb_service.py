@@ -11,9 +11,35 @@ logger = logging.getLogger(__name__)
 
 class KBService:
     def __init__(self):
-        self.similarity_threshold = 0.65  # Lowered from 0.7 to catch more similar issues
-        self.kb_file_path = None
-    
+        self.similarity_threshold = 0.65
+        self.kb_file_path = self._get_kb_file_path()  # Initialize file path
+
+    def _get_kb_file_path(self):
+        """Get the correct path to kb_data.txt"""
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Try multiple possible locations
+        possible_paths = [
+            os.path.join(current_dir, "..", "knowledge_base", "docs", "kb_data.txt"),
+            os.path.join(current_dir, "knowledge_base", "docs", "kb_data.txt"),
+            "knowledge_base/docs/kb_data.txt",
+            "../knowledge_base/docs/kb_data.txt",
+            os.path.join(os.getcwd(), "knowledge_base", "docs", "kb_data.txt")
+        ]
+        
+        for path in possible_paths:
+            full_path = os.path.abspath(path)
+            if os.path.exists(full_path):
+                logger.info(f"Found KB file at: {full_path}")
+                return full_path
+        
+        # If no file exists, create one in the most likely location
+        default_path = os.path.join(current_dir, "..", "knowledge_base", "docs", "kb_data.txt")
+        os.makedirs(os.path.dirname(default_path), exist_ok=True)
+        logger.info(f"Using default KB file path: {default_path}")
+        return default_path
+
     def initialize_kb_from_file(self, file_path: str) -> bool:
         """Load knowledge base from file and store in ChromaDB"""
         try:
@@ -56,41 +82,69 @@ class KBService:
             logger.error(f"Error initializing KB: {e}")
             return False
     
+    # In backend/services/kb_service.py - Update append_to_kb_file method
+
     def append_to_kb_file(self, kb_id: str, use_case: str, required_info: List[str], solution_steps: List[str]):
         """Append new KB entry to kb_data.txt file"""
         try:
+            logger.info(f"=== STARTING KB FILE APPEND ===")
+            logger.info(f"KB ID: {kb_id}")
+            logger.info(f"Use Case: {use_case}")
+            logger.info(f"File Path: {self.kb_file_path}")
+            
             if not self.kb_file_path:
-                logger.error("KB file path not set")
+                logger.error("❌ KB file path not set")
                 return False
             
-            # Extract KB number from kb_id (e.g., KB_5 -> 5)
-            kb_number = kb_id.split('_')[1]
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.kb_file_path), exist_ok=True)
+            logger.info(f"Directory ensured: {os.path.dirname(self.kb_file_path)}")
+            
+            # Check if file exists and get current stats
+            file_exists = os.path.exists(self.kb_file_path)
+            if file_exists:
+                current_size = os.path.getsize(self.kb_file_path)
+                logger.info(f"📄 File exists, current size: {current_size} bytes")
+            else:
+                logger.info("📄 File does not exist, will create new file")
             
             # Format the entry
             entry_text = f"\n\n{'='*50}\n"
-            entry_text += f"[KB_ID: {kb_number}]\n\n"
+            entry_text += f"[KB_ID: {kb_id}]\n\n"
             entry_text += f"Use Case: {use_case}\n\n"
-            entry_text += "Required Info:\n"
-            for info in required_info:
-                entry_text += f"- {info}\n"
-            entry_text += "\n"
+            
+            if required_info:
+                entry_text += "Required Info:\n"
+                for info in required_info:
+                    entry_text += f"- {info}\n"
+                entry_text += "\n"
+            
             entry_text += "Solution Steps:\n"
             if isinstance(solution_steps, list):
                 for step in solution_steps:
                     entry_text += f"{step}\n"
             else:
                 entry_text += f"{solution_steps}\n"
+            
             entry_text += f"\n{'-'*50}"
+            
+            logger.info(f"Entry text length: {len(entry_text)} characters")
             
             # Append to file
             with open(self.kb_file_path, 'a', encoding='utf-8') as f:
                 f.write(entry_text)
             
-            logger.info(f"Appended KB entry {kb_id} to file: {self.kb_file_path}")
+            # Verify the write
+            new_size = os.path.getsize(self.kb_file_path)
+            logger.info(f"✅ File write completed, new size: {new_size} bytes")
+            logger.info(f"=== KB FILE APPEND COMPLETED ===")
+            
             return True
             
         except Exception as e:
-            logger.error(f"Error appending to KB file: {e}")
+            logger.error(f"❌ Error appending to KB file: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def search_kb(self, query: str, n_results: int = 3) -> Dict[str, Any]:

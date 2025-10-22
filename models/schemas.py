@@ -18,6 +18,19 @@ class IncidentResponse(BaseModel):
     action: Optional[str] = None
     show_action_buttons: Optional[bool] = False
     action_buttons: Optional[List[Dict[str, str]]] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Hello! How can I help you?",
+                "session_id": "abc123",
+                "show_action_buttons": True,
+                "action_buttons": [
+                    {"label": "Track Incident", "value": "track"},
+                    {"label": "Create New", "value": "create"}
+                ]
+            }
+        }
 
 class IncidentCreate(BaseModel):
     incident_id: str

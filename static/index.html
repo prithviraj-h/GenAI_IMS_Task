@@ -21,17 +21,12 @@
             <div class="chat-messages" id="chatMessages">
                 <div class="message bot-message">
                     <div class="message-content">
-                        <p>Hello! I'm your IT helpdesk assistant. I'm here to help you report technical issues.</p>
-                        <p>I can assist with:</p>
-                        <ul>
-                            <li>Email problems (Outlook, access issues)</li>
-                            <li>Network connectivity (VPN, WiFi)</li>
-                            <li>Password resets</li>
-                            <li>Software installation requests</li>
-                            <li>Shared drive access</li>
-                            <li>System performance issues</li>
-                        </ul>
-                        <p>What issue are you experiencing today?</p>
+                        <p>Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you.</p>
+                        <p>How may I help you? Do you want to track an already created incident or create a new one?</p>
+                        <div class="action-buttons-container" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; display: flex; gap: 12px; flex-wrap: wrap;">
+                            <button class="action-button" data-value="track a incident" style="padding: 12px 24px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); text-transform: uppercase; letter-spacing: 0.5px; color: white; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);" onclick="this.disabled=true; document.getElementById('userInput').value=this.getAttribute('data-value'); sendMessage();">Track Incident</button>
+                            <button class="action-button" data-value="create a incident" style="padding: 12px 24px; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); text-transform: uppercase; letter-spacing: 0.5px; color: white; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);" onclick="this.disabled=true; document.getElementById('userInput').value=this.getAttribute('data-value'); sendMessage();">Create New Incident</button>
+                        </div>
                     </div>
                 </div>
             </div>
