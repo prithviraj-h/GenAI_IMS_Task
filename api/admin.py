@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from services.incident_service import incident_service
 from services.kb_service import kb_service
 from db.chroma import chroma_client
+from db.mongo import mongo_client
 from models.schemas import KBApprovalRequest
 from typing import Optional, List, Dict, Any
 import logging
@@ -135,6 +136,45 @@ async def approve_kb_entry(incident_id: str, request: Dict[str, str]):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+@router.put("/incidents/{incident_id}/admin-message")
+async def update_admin_message(incident_id: str, request: Dict[str, str]):
+    """Update admin message for an incident - allows custom messages for all statuses"""
+    try:
+        admin_message = request.get('admin_message', '').strip()
+        
+        # Get current incident to check status
+        incident = mongo_client.get_incident_by_id(incident_id)
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # If message is empty, set appropriate default based on status
+        if not admin_message:
+            default_messages = {
+                'pending_info': 'Still need some information.',
+                'open': 'All information collected. Our team will contact you soon.',
+                'resolved': 'Incident has been resolved successfully.',
+                'closed': 'Incident has been closed.'
+            }
+            admin_message = default_messages.get(incident.get('status', ''), '')
+        
+        success = mongo_client.update_incident(incident_id, {
+            'admin_message': admin_message,
+            'updated_on': datetime.utcnow()
+        })
+        
+        if success:
+            return {
+                "message": "Admin message updated successfully",
+                "incident_id": incident_id,
+                "admin_message": admin_message,
+                "status": incident.get('status')
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update admin message")
+    except Exception as e:
+        logger.error(f"Error updating admin message: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
 @router.get("/kb/entries")
 async def get_kb_entries():
     """Get all knowledge base entries"""

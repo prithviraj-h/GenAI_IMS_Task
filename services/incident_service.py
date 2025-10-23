@@ -137,6 +137,10 @@ class IncidentService:
             
             has_active_incident = len(active_incidents) > 0
             
+            # ✅ NEW: Handle previous solution ID response
+            if awaiting_response == 'previous_solution_id':
+                return self._handle_previous_solution_id(user_input, session_id, conversation_history, active_incidents)
+            
             # ✅ NEW: Handle incident ID selection after KEEP
             if awaiting_response == 'incident_id_selection':
                 return self._handle_incident_selection(user_input, session_id, conversation_history, active_incidents)
@@ -164,6 +168,12 @@ class IncidentService:
             if intent == 'GREETING':
                 return self._handle_greeting(user_input, session_id, conversation_history)
             
+            elif intent == 'GREETING_CONTEXT':
+                return self._handle_greeting_context(user_input, session_id, conversation_history, active_incidents)
+            
+            elif intent == 'UNRELATED_QUERY':
+                return self._handle_unrelated_query(user_input, session_id, conversation_history, active_incidents)
+            
             elif intent == 'CLEAR_SESSION':
                 return self._handle_clear_session(session_id, conversation_history, user_input)
             
@@ -179,6 +189,9 @@ class IncidentService:
             
             elif intent == 'CLOSE_INCIDENT':
                 return self._handle_close_incident(active_incidents, user_input, session_id, conversation_history)
+            
+            elif intent == 'ASK_PREVIOUS_SOLUTION':
+                return self._handle_ask_previous_solution(user_input, session_id, conversation_history)
             
             elif intent == 'NEW_INCIDENT':
                 # Check if awaiting keep/ignore response
@@ -235,24 +248,91 @@ class IncidentService:
             'show_action_buttons': True,
             'action_buttons': [
                 {'label': 'Track Incident', 'value': 'track a incident'},
-                {'label': 'Create New Incident', 'value': 'create a incident'}
+                {'label': 'Create New Incident', 'value': 'create a incident'},
+                {'label': 'View Previous Solution', 'value': 'view previous solution'}
             ]
+        }
+    
+    def _handle_greeting_context(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
+        """Handle greeting while there's an active incident"""
+        if active_incidents:
+            current_incident_id = active_incidents[-1]
+            current_incident = mongo_client.get_incident_by_id(current_incident_id)
+            
+            if current_incident and current_incident.get('status') == 'pending_info':
+                # Get the last question that was asked
+                incident_conversation = current_incident.get('conversation_history', [])
+                last_question = ""
+                for msg in reversed(incident_conversation):
+                    if msg.get('role') == 'assistant':
+                        last_question = msg.get('content', '')
+                        break
+                
+                response = f"Hello! 👋 Thanks for getting back. Let's continue with your incident.\n\n{last_question}"
+            else:
+                response = "Hello! 👋 How can I help you further?"
+        else:
+            response = "Hello! 👋 How can I help you today?"
+        
+        self.update_session_context(session_id, user_input, response)
+        return {
+            'message': response,
+            'session_id': session_id,
+            'incident_id': current_incident_id if active_incidents else None,
+            'status': 'pending_info' if active_incidents else None
+        }
+    
+    def _handle_unrelated_query(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
+        """Handle unrelated query during active incident"""
+        if active_incidents:
+            current_incident_id = active_incidents[-1]
+            current_incident = mongo_client.get_incident_by_id(current_incident_id)
+            
+            if current_incident and current_incident.get('status') == 'pending_info':
+                # Get the last question that was asked
+                incident_conversation = current_incident.get('conversation_history', [])
+                last_question = ""
+                for msg in reversed(incident_conversation):
+                    if msg.get('role') == 'assistant':
+                        last_question = msg.get('content', '')
+                        break
+                
+                response = f"I understand you're asking about something else. Let's first complete your current incident.\n\n{last_question}"
+            else:
+                response = "I notice we were discussing a different topic. Would you like to continue with that or start something new?"
+        else:
+            response = llm_service.handle_general_query(user_input, conversation_history)
+        
+        self.update_session_context(session_id, user_input, response)
+        return {
+            'message': response,
+            'session_id': session_id,
+            'incident_id': current_incident_id if active_incidents else None,
+            'status': current_incident.get('status') if current_incident else None
         }
     
     def _handle_clear_session(self, session_id: str, conversation_history: List[Dict], user_input: str) -> Dict[str, Any]:
         """Handle clear session intent"""
-        response = llm_service.generate_clear_session_confirmation()
-        self.update_session_context(session_id, user_input, response)
-        
-        # Clear the session
+        # Clear the session first
         self.clear_session(session_id)
+        
+        # Generate the exact same greeting as initial greeting
+        response = "Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you. How may I help you? Do you want to track an already created incident or create a new one?"
+        
+        self.update_session_context(session_id, user_input, response)
         
         return {
             'message': response,
             'session_id': session_id,
             'incident_id': None,
             'status': 'session_cleared',
-            'action': 'clear_session'
+            'action': 'clear_session',
+            'show_action_buttons': True,
+            'action_buttons': [
+                {'label': 'Track Incident', 'value': 'track a incident'},
+                {'label': 'Create New Incident', 'value': 'create a incident'},
+                {'label': 'View Previous Solution', 'value': 'view previous solution'}
+            ]
         }
     
     def _handle_track_incident_request(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
@@ -267,8 +347,9 @@ class IncidentService:
             'status': 'awaiting_incident_id'
         }
     
+    # Update the _handle_track_incident_by_id method to include admin message prominently
     def _handle_track_incident_by_id(self, incident_id: str, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
-        """Handle tracking incident by ID"""
+        """Handle tracking incident by ID with admin message"""
         try:
             incident = mongo_client.get_incident_by_id(incident_id)
             
@@ -282,12 +363,18 @@ class IncidentService:
                     'status': 'not_found'
                 }
             
-            # Generate status response
+            # Get admin message - use default if empty
+            admin_message = incident.get('admin_message', '')
+            if not admin_message:
+                admin_message = self._get_default_admin_message(incident.get('status', ''))
+            
+            # Generate status response with prominent admin message
             incident_details = {
                 'incident_id': incident.get('incident_id'),
                 'status': incident.get('status'),
                 'user_demand': incident.get('user_demand'),
                 'collected_info': incident.get('collected_info', {}),
+                'admin_message': admin_message,
                 'created_on': str(incident.get('created_on')),
                 'updated_on': str(incident.get('updated_on'))
             }
@@ -362,6 +449,91 @@ class IncidentService:
                 'incident_id': None,
                 'status': 'error'
             }
+    
+    def _handle_ask_previous_solution(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
+        """Handle request to view previous solution or continue incident"""
+        response = "I'd be happy to help you with a previous incident. Please provide the Incident ID (e.g., INC20251022150744) for which you'd like to view the solution or continue the conversation."
+        self.update_session_context(session_id, user_input, response)
+        
+        # Mark that we're awaiting incident ID for previous solution
+        mongo_client.update_session(session_id, {
+            'awaiting_response': 'previous_solution_id'
+        })
+        
+        return {
+            'message': response,
+            'session_id': session_id,
+            'incident_id': None,
+            'status': 'awaiting_previous_incident_id'
+        }
+    
+    def _handle_previous_solution_id(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
+        """Handle incident ID provided for previous solution request"""
+        # Extract incident ID from user input
+        incident_id_match = re.search(r'INC\d+', user_input)
+        
+        if not incident_id_match:
+            response = "I couldn't find a valid Incident ID in your message. Please provide the Incident ID (e.g., INC20251022150744):"
+            self.update_session_context(session_id, user_input, response)
+            return {
+                'message': response,
+                'session_id': session_id,
+                'incident_id': None,
+                'status': 'awaiting_previous_incident_id'
+            }
+        
+        incident_id = incident_id_match.group()
+        
+        # Check if incident exists
+        incident = mongo_client.get_incident_by_id(incident_id)
+        
+        if not incident:
+            response = f"No previous incident found for ID: {incident_id}. Please check the ID and try again."
+            self.update_session_context(session_id, user_input, response)
+            
+            # Clear awaiting state
+            mongo_client.update_session(session_id, {
+                'awaiting_response': None
+            })
+            
+            return {
+                'message': response,
+                'session_id': session_id,
+                'incident_id': None,
+                'status': 'incident_not_found'
+            }
+        
+        # Clear awaiting state
+        mongo_client.update_session(session_id, {
+            'awaiting_response': None
+        })
+        
+        # If incident is resolved, show solution
+        if incident.get('status') == 'resolved':
+            solution_steps = incident.get('solution_steps', 'No solution steps provided yet.')
+            admin_message = incident.get('admin_message', '')
+            
+            response = f"**Incident {incident_id} - Solution Details**\n\n"
+            response += f"**Issue:** {incident.get('user_demand', 'Unknown issue')}\n\n"
+            response += f"**Solution:**\n{solution_steps}\n\n"
+            
+            if admin_message:
+                response += f"**Admin Note:** {admin_message}\n\n"
+            
+            response += "Is there anything else I can help you with?"
+            
+            self.update_session_context(session_id, user_input, response)
+            
+            return {
+                'message': response,
+                'session_id': session_id,
+                'incident_id': incident_id,
+                'status': 'solution_displayed'
+            }
+        else:
+            # Incident is not resolved, continue from where it stopped
+            response = f"Continuing with incident {incident_id}. Let's pick up from where we left off.\n\n"
+            return self._continue_incident(incident, user_input, session_id, conversation_history)
     
     def _handle_new_incident_with_active(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle new incident when user has active incidents"""
@@ -447,6 +619,7 @@ class IncidentService:
                     'is_new_kb_entry': False,
                     'needs_kb_approval': False,
                     'requires_kb_addition': False,
+                    'admin_message': '',  # Add empty admin message field
                     'created_on': datetime.utcnow(),
                     'updated_on': datetime.utcnow()
                 }
@@ -478,6 +651,7 @@ class IncidentService:
                         'is_new_kb_entry': True,
                         'needs_kb_approval': True,
                         'requires_kb_addition': True,
+                        'admin_message': '',  # Add empty admin message field
                         'created_on': datetime.utcnow(),
                         'updated_on': datetime.utcnow()
                     }
@@ -687,12 +861,14 @@ class IncidentService:
                 pending.append(incident)
         return pending
     
-    def _create_new_incident(self, user_input: str, session_id: str,
-                            conversation_history: List[Dict], kb_result: Dict) -> Dict[str, Any]:
+    def _create_new_incident(self, user_input: str, session_id: str, conversation_history: List[Dict], kb_result: Dict) -> Dict[str, Any]:
         """Create new incident with KB match"""
         try:
             best_match = kb_result['best_match']
             incident_id = generate_incident_id()
+            
+            # Get default admin message for new incident
+            default_message = self._get_default_admin_message('pending_info')
             
             # Create incident
             incident_data = {
@@ -710,6 +886,7 @@ class IncidentService:
                 'is_new_kb_entry': False,
                 'needs_kb_approval': False,
                 'requires_kb_addition': False,
+                'admin_message': default_message,  # Set default message
                 'created_on': datetime.utcnow(),
                 'updated_on': datetime.utcnow()
             }
@@ -749,15 +926,16 @@ class IncidentService:
                 'incident_id': None,
                 'status': 'error'
             }
-    
-    def _create_new_incident_without_kb(self, user_input: str, session_id: str,
-                                       conversation_history: List[Dict], analysis: Dict) -> Dict[str, Any]:
+    def _create_new_incident_without_kb(self, user_input: str, session_id: str, conversation_history: List[Dict], analysis: Dict) -> Dict[str, Any]:
         """Create new incident without KB match (needs admin approval)"""
         try:
             incident_id = generate_incident_id()
             
             required_info = analysis.get('required_info', [])
             questions = analysis.get('clarifying_questions', [])
+            
+            # Get default admin message for new incident
+            default_message = self._get_default_admin_message('pending_info')
             
             # Create incident
             incident_data = {
@@ -775,6 +953,7 @@ class IncidentService:
                 'is_new_kb_entry': True,
                 'needs_kb_approval': True,
                 'requires_kb_addition': True,
+                'admin_message': default_message,  # Set default message
                 'created_on': datetime.utcnow(),
                 'updated_on': datetime.utcnow()
             }
@@ -813,7 +992,7 @@ class IncidentService:
                 'incident_id': None,
                 'status': 'error'
             }
-    
+
     def _continue_incident(self, incident: Dict, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Continue with existing pending incident"""
         try:
@@ -938,9 +1117,11 @@ class IncidentService:
                 'status': 'error'
             }
     
-    def _finalize_incident(self, incident_id: str, session_id: str, collected_info: Dict,
-                          conversation: List, user_input: str) -> Dict:
+    def _finalize_incident(self, incident_id: str, session_id: str, collected_info: Dict, conversation: List, user_input: str) -> Dict:
         """Finalize and close incident collection"""
+        # Get default message for open status
+        default_message = self._get_default_admin_message('open')
+        
         final_message = (f"Thank you for providing all the necessary information. "
                         f"Your incident has been created successfully.\n\n"
                         f"Incident ID: {incident_id}\n\n"
@@ -953,6 +1134,7 @@ class IncidentService:
             'conversation_history': conversation,
             'collected_info': collected_info,
             'missing_info': [],
+            'admin_message': default_message,  # Update to open status message
             'completed_at': datetime.utcnow()
         })
         
@@ -996,6 +1178,10 @@ class IncidentService:
             # Ensure is_new_kb_entry field exists  
             if 'is_new_kb_entry' not in incident:
                 incident['is_new_kb_entry'] = False
+            
+            # Ensure admin_message field exists
+            if 'admin_message' not in incident:
+                incident['admin_message'] = ''
         
         # Return as-is (already sorted by MongoDB)
         return incidents
@@ -1044,14 +1230,35 @@ class IncidentService:
     
     # ✅ ADD MISSING METHOD: update_incident_status
     def update_incident_status(self, incident_id: str, status: str) -> bool:
-        """Update incident status (resolve, reopen, etc.)"""
+        """Update incident status and set appropriate admin message"""
         try:
             valid_statuses = ['pending_info', 'open', 'resolved', 'closed']
             if status not in valid_statuses:
                 logger.error(f"Invalid status: {status}. Valid statuses: {valid_statuses}")
                 return False
             
+            # Get the current incident to check if we should preserve custom messages
+            current_incident = mongo_client.get_incident_by_id(incident_id)
+            current_admin_message = current_incident.get('admin_message', '') if current_incident else ''
+            
             update_data = {'status': status}
+            
+            # Only set default message for pending_info and open if no custom message exists
+            if status in ['pending_info', 'open'] and (not current_admin_message or current_admin_message in [
+                'Still need some information.',
+                'All information collected. Our team will contact you soon.',
+                'Incident has been resolved successfully.',
+                'Incident has been closed.'
+            ]):
+                update_data['admin_message'] = self._get_default_admin_message(status)
+            elif status in ['resolved', 'closed'] and (not current_admin_message or current_admin_message in [
+                'Still need some information.',
+                'All information collected. Our team will contact you soon.',
+                'Incident has been resolved successfully.',
+                'Incident has been closed.'
+            ]):
+                # For resolved/closed, set default but allow admin to customize later
+                update_data['admin_message'] = self._get_default_admin_message(status)
             
             # Add timestamp for resolved/closed status
             if status in ['resolved', 'closed']:
@@ -1069,7 +1276,6 @@ class IncidentService:
         except Exception as e:
             logger.error(f"Error updating incident status: {e}")
             return False
-    
     def add_incident_to_kb(self, incident_id: str, use_case: str, required_info: list, solution_steps: list) -> bool:
         """Add incident type to knowledge base and kb_data.txt file"""
         try:
@@ -1200,7 +1406,7 @@ class IncidentService:
     # ✅ NEW METHOD: Check if user is asking about previous solution
     def _is_asking_about_previous_solution(self, user_input: str) -> bool:
         """Check if user is asking about a previous incident/solution"""
-        keywords = ['previous', 'last', 'earlier', 'before', 'my incident', 'solution', 'what happened', 'status']
+        keywords = ['previous', 'last', 'earlier', 'before', 'my incident', 'solution', 'what happened', 'status', 'view solution', 'continue my', 'old incident']
         user_lower = user_input.lower()
         return any(keyword in user_lower for keyword in keywords)
 
@@ -1226,7 +1432,8 @@ class IncidentService:
                         'status': incident.get('status'),
                         'user_demand': incident.get('user_demand'),
                         'collected_info': incident.get('collected_info', {}),
-                        'solution_steps': incident.get('solution_steps', 'Not yet provided')
+                        'solution_steps': incident.get('solution_steps', 'Not yet provided'),
+                        'admin_message': incident.get('admin_message', '')
                     }
                     
                     response = llm_service.generate_incident_status_response(incident_details)
@@ -1257,6 +1464,17 @@ class IncidentService:
                 'incident_id': None,
                 'status': 'awaiting_incident_id'
             }
+        
+    # Add this method to the IncidentService class
+    def _get_default_admin_message(self, status: str) -> str:
+        """Get default admin message based on incident status"""
+        default_messages = {
+            'pending_info': 'Still need some information.',
+            'open': 'All information collected. Our team will contact you soon.',
+            'resolved': 'Incident has been resolved successfully.',
+            #'closed': 'Incident has been closed.'
+        }
+        return default_messages.get(status, '')
 
 
 # Global incident service instance

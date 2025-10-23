@@ -1,5 +1,4 @@
 // static/admin-script.js
-
 let allIncidents = [];
 let currentFilter = { status: '', needsKBApproval: false };
 
@@ -54,68 +53,173 @@ function displayIncidents(incidents) {
         return;
     }
     
-    container.innerHTML = incidents.map((incident, index) => {
+    let tableHTML = `
+        <table class="incidents-table">
+            <thead>
+                <tr>
+                    <th>Incident ID</th>
+                    <th>Use Case</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Admin Message</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    incidents.forEach((incident, index) => {
         const isNew = isIncidentNew(incident);
-        const newBadge = isNew ? '<span class="new-incident-badge">NEW</span>' : '';
+        const newBadge = isNew ? ' <span class="new-incident-badge">NEW</span>' : '';
         
-        return `
-        <div class="incident-card ${isNew ? 'new-incident' : ''}" data-incident-id="${incident.incident_id}">
-            <div class="incident-header">
-                <div>
-                    <h3 class="incident-id" onclick="viewIncident('${incident.incident_id}')">
-                        <i class='bx bx-shield-x'></i> ${incident.incident_id} ${newBadge}
-                    </h3>
-                    <p class="incident-use-case">${incident.use_case || incident.user_demand || 'No description available'}</p>
-                </div>
-                <div class="incident-badges">
-                    <span class="status-badge status-${incident.status}">
-                        <i class='bx ${getStatusIcon(incident.status)}'></i> ${incident.status.replace('_', ' ').toUpperCase()}
+        // Determine placeholder text based on status
+        let placeholder = "Add admin message...";
+        if (incident.status === 'pending_info') {
+            placeholder = "Still need some information. (Default)";
+        } else if (incident.status === 'open') {
+            placeholder = "All information collected. Our team will contact you soon. (Default)";
+        } else if (incident.status === 'resolved') {
+            placeholder = "Incident has been resolved successfully. (Default)";
+        }
+        
+        tableHTML += `
+            <tr class="${isNew ? 'new-incident' : ''}">
+                <td>
+                    <span class="incident-id-link" onclick="viewIncident('${incident.incident_id}')">
+                        ${incident.incident_id}${newBadge}
                     </span>
-                    ${incident.needs_kb_approval ? 
-                        '<span class="kb-approval-badge"><i class="bx bx-check-shield"></i> NEEDS APPROVAL</span>' 
-                        : ''}
-                    ${incident.is_new_kb_entry ? 
-                        '<span class="new-kb-badge"><i class="bx bx-star"></i> NEW PATTERN</span>' 
-                        : ''}
-                </div>
-            </div>
-            
-            <div class="incident-info">
-                <div class="info-row">
-                    <span class="label"><i class='bx bx-calendar-plus'></i> Created:</span>
-                    <span>${formatDate(incident.created_on)}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label"><i class='bx bx-calendar-edit'></i> Updated:</span>
-                    <span>${formatDate(incident.updated_on)}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label"><i class='bx bx-id-card'></i> Session:</span>
-                    <span class="session-id">${incident.session_id || 'N/A'}</span>
-                </div>
-            </div>
-            
-            <div class="incident-actions">
-                <button class="btn-view" onclick="viewIncident('${incident.incident_id}')">
-                    <i class='bx bx-search-alt'></i> Investigate
-                </button>
-                ${incident.needs_kb_approval ? 
-                    `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">
-                        <i class='bx bx-check-shield'></i> Approve Solution
-                    </button>` 
-                    : ''}
-                ${incident.status !== 'resolved' ? 
-                    `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">
-                        <i class='bx bx-check-double'></i> Mark Resolved
-                    </button>` 
-                    : ''}
-                <button class="btn-delete" onclick="deleteIncident('${incident.incident_id}')">
-                    <i class='bx bx-trash-alt'></i> Archive
-                </button>
-            </div>
-        </div>
+                </td>
+                <td>${incident.use_case || incident.user_demand || 'No description'}</td>
+                <td>
+                    <span class="status-badge status-${incident.status}">
+                        ${incident.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                    ${incident.needs_kb_approval ? '<br><span class="kb-approval-badge">NEEDS APPROVAL</span>' : ''}
+                </td>
+                <td>${formatDate(incident.created_on)}</td>
+                <td class="admin-message-cell">
+                    <textarea 
+                        class="admin-message-input" 
+                        id="admin-message-${incident.incident_id}"
+                        placeholder="${placeholder}"
+                        title="Edit admin message. Default messages are set based on status."
+                    >${incident.admin_message || ''}</textarea>
+                    <button class="btn-save-message" onclick="saveAdminMessage('${incident.incident_id}')">
+                        <i class='bx bx-save'></i> Save
+                    </button>
+                </td>
+                <td>
+                    <div class="table-actions">
+                        <button class="btn-view" onclick="viewIncident('${incident.incident_id}')">
+                            <i class='bx bx-search-alt'></i> View
+                        </button>
+                        ${incident.needs_kb_approval ? 
+                            `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">
+                                <i class='bx bx-check-shield'></i> Approve
+                            </button>` 
+                            : ''}
+                        ${incident.status === 'resolved' ? 
+                            `<button class="btn-resolve" onclick="reopenIncident('${incident.incident_id}')">
+                                <i class='bx bx-undo'></i> Reopen
+                            </button>` 
+                            : ''}
+                    </div>
+                </td>
+            </tr>
         `;
-    }).join('');
+    });
+    
+    tableHTML += `
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = tableHTML;
+}
+
+async function saveAdminMessage(incidentId) {
+    const messageInput = document.getElementById(`admin-message-${incidentId}`);
+    const message = messageInput.value.trim();
+    
+    try {
+        const response = await fetch(`/api/admin/incidents/${incidentId}/admin-message`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                admin_message: message
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            
+            // Show success feedback
+            const btn = messageInput.nextElementSibling;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bx bx-check"></i> Saved';
+            btn.style.background = 'linear-gradient(135deg, #66bb6a, #43a047)';
+            
+            // Update the placeholder if message is empty (will use default)
+            if (!message) {
+                const incident = allIncidents.find(inc => inc.incident_id === incidentId);
+                if (incident) {
+                    let placeholder = "Add admin message...";
+                    if (incident.status === 'pending_info') {
+                        placeholder = "Still need some information. (Default)";
+                    } else if (incident.status === 'open') {
+                        placeholder = "All information collected. Our team will contact you soon. (Default)";
+                    } else if (incident.status === 'resolved') {
+                        placeholder = "Incident has been resolved successfully. (Default)";
+                    }
+                    messageInput.placeholder = placeholder;
+                }
+            }
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = 'linear-gradient(135deg, #66bb6a, #43a047)';
+            }, 2000);
+            
+            // Reload incidents to get updated data
+            loadIncidents();
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.detail || 'Failed to save admin message'}`);
+        }
+    } catch (error) {
+        console.error('Error saving admin message:', error);
+        alert('Error saving admin message. Please try again.');
+    }
+}
+async function reopenIncident(incidentId) {
+    if (!confirm(`Are you sure you want to reopen incident ${incidentId}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/incidents/${incidentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: 'open'
+            })
+        });
+        
+        if (response.ok) {
+            alert('Incident reopened successfully!');
+            loadIncidents();
+            loadStats();
+        } else {
+            alert('Error reopening incident');
+        }
+    } catch (error) {
+        console.error('Error reopening incident:', error);
+        alert('Error reopening incident. Please try again.');
+    }
 }
 
 function getStatusIcon(status) {
@@ -253,6 +357,13 @@ function showIncidentModal(incident) {
             </div>
         `).join('');
     
+    // Get admin message or use default
+    const adminMessage = incident.admin_message || 
+        (incident.status === 'pending_info' ? 'Still need some information.' :
+         incident.status === 'open' ? 'All information collected. Our team will contact you soon.' :
+         incident.status === 'resolved' ? 'Incident has been resolved successfully.' :
+         'Incident has been closed.');
+    
     modalBody.innerHTML = `
         <div class="incident-details">
             <h2><i class='bx bx-shield-x'></i> ${incident.incident_id}</h2>
@@ -292,6 +403,27 @@ function showIncidentModal(incident) {
             </div>
             
             <div class="detail-section">
+                <h3><i class='bx bx-message-alt'></i> Admin Message</h3>
+                <div class="admin-message-display" style="background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 12px; border-left: 5px solid #667eea; margin: 15px 0;">
+                    <p style="margin: 0; font-size: 16px; line-height: 1.6; color: rgba(255, 255, 255, 0.9);">
+                        <strong>📢 Message to User:</strong><br>
+                        ${adminMessage}
+                    </p>
+                </div>
+                <div style="margin-top: 15px;">
+                    <textarea 
+                        class="admin-message-input" 
+                        id="modal-admin-message-${incident.incident_id}"
+                        placeholder="Edit admin message..."
+                        style="width: 100%; margin-bottom: 10px;"
+                    >${incident.admin_message || ''}</textarea>
+                    <button class="btn-save-message" onclick="saveModalAdminMessage('${incident.incident_id}')">
+                        <i class='bx bx-save'></i> Update Message
+                    </button>
+                </div>
+            </div>
+            
+            <div class="detail-section">
                 <h3><i class='bx bx-check-circle'></i> Collected Evidence</h3>
                 ${collectedInfoHtml ? `<ul class="info-list">${collectedInfoHtml}</ul>` : '<p>No evidence collected yet.</p>'}
             </div>
@@ -323,13 +455,18 @@ function showIncidentModal(incident) {
                         <i class='bx bx-check-shield'></i> Approve & Add to KB
                     </button>` 
                     : ''}
-                ${incident.status !== 'resolved' ? 
+                ${incident.status !== 'resolved' && incident.status !== 'closed' ? 
                     `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">
                         <i class='bx bx-check-double'></i> Mark as Resolved
                     </button>` 
                     : ''}
+                ${incident.status === 'resolved' ? 
+                    `<button class="btn-resolve" onclick="reopenIncident('${incident.incident_id}')">
+                        <i class='bx bx-undo'></i> Reopen Incident
+                    </button>` 
+                    : ''}
                 <button class="btn-delete" onclick="deleteIncident('${incident.incident_id}')">
-                    <i class='bx bx-trash-alt'></i> Archive Incident
+                    <i class='bx bx-trash-alt'></i> Delete Incident
                 </button>
                 <button class="btn-secondary" onclick="closeModal()">
                     <i class='bx bx-x'></i> Close
@@ -341,6 +478,45 @@ function showIncidentModal(incident) {
     modal.style.display = 'block';
 }
 
+// Add function to save admin message from modal
+async function saveModalAdminMessage(incidentId) {
+    const messageInput = document.getElementById(`modal-admin-message-${incidentId}`);
+    const message = messageInput.value.trim();
+    
+    try {
+        const response = await fetch(`/api/admin/incidents/${incidentId}/admin-message`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                admin_message: message
+            })
+        });
+        
+        if (response.ok) {
+            // Show success feedback
+            const btn = messageInput.nextElementSibling;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bx bx-check"></i> Updated';
+            btn.style.background = 'linear-gradient(135deg, #66bb6a, #43a047)';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = 'linear-gradient(135deg, #66bb6a, #43a047)';
+            }, 2000);
+            
+            // Reload the modal to show updated message
+            viewIncident(incidentId);
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.detail || 'Failed to update admin message'}`);
+        }
+    } catch (error) {
+        console.error('Error updating admin message:', error);
+        alert('Error updating admin message. Please try again.');
+    }
+}
 function showKBApprovalModal(incidentId) {
     const modal = document.getElementById('incidentModal');
     const modalBody = document.getElementById('modalBody');
@@ -439,7 +615,7 @@ async function resolveIncident(incidentId) {
 }
 
 async function deleteIncident(incidentId) {
-    if (!confirm(`Are you sure you want to archive incident ${incidentId}?\n\nThis action will move it to the archives.`)) {
+    if (!confirm(`Are you sure you want to Delete incident ${incidentId}?\n\nThis action will move it to the archives.`)) {
         return;
     }
     
@@ -449,13 +625,13 @@ async function deleteIncident(incidentId) {
         });
         
         if (response.ok) {
-            alert('Security incident archived successfully!');
+            alert('Security incident deleted successfully!');
             closeModal();
             loadIncidents();
             loadStats();
         } else {
             const error = await response.json();
-            alert(`Error: ${error.detail || 'Failed to archive incident'}`);
+            alert(`Error: ${error.detail || 'Failed to delete incident'}`);
         }
     } catch (error) {
         console.error('Error deleting incident:', error);
@@ -465,14 +641,6 @@ async function deleteIncident(incidentId) {
 
 function closeModal() {
     document.getElementById('incidentModal').style.display = 'none';
-}
-
-// Close modal when clicking outside
-window.onclick = function(event) {
-    const modal = document.getElementById('incidentModal');
-    if (event.target === modal) {
-        closeModal();
-    }
 }
 
 // ChromaDB Management Functions
@@ -520,7 +688,6 @@ async function viewChromaEntries() {
         alert('Error loading security knowledge base');
     }
 }
-// Update your admin-script.js deleteChromaEntry function
 
 async function deleteChromaEntry(kbId) {
     if (!confirm(`Are you sure you want to remove security pattern: ${kbId}?\n\nThis will remove it from both the database and knowledge base file.`)) {
@@ -549,27 +716,6 @@ async function deleteChromaEntry(kbId) {
     }
 }
 
-// Add this function to update KB file status
-async function updateKBFileStatus() {
-    try {
-        const response = await fetch('/api/admin/kb/current-file');
-        const data = await response.json();
-        
-        // Update UI with current file status
-        console.log('KB File Status:', data);
-        
-        // You can display this information in your admin panel
-        if (data.file_exists) {
-            console.log(`KB File: ${data.file_size} bytes, ${data.last_modified}`);
-        } else {
-            console.log('KB File: Not found');
-        }
-        
-    } catch (error) {
-        console.error('Error updating KB file status:', error);
-    }
-}
-
 // Add force sync function
 async function forceSyncKB() {
     try {
@@ -584,6 +730,19 @@ async function forceSyncKB() {
         alert('❌ Error synchronizing knowledge base');
     }
 }
+
+async function updateKBFileStatus() {
+    try {
+        const response = await fetch('/api/admin/kb/current-file');
+        const data = await response.json();
+        
+        console.log('KB File Status:', data);
+        
+    } catch (error) {
+        console.error('Error updating KB file status:', error);
+    }
+}
+
 // Keyboard shortcuts
 document.addEventListener('keydown', function(event) {
     // Escape key to close modal
@@ -597,3 +756,11 @@ document.addEventListener('keydown', function(event) {
         loadIncidents();
     }
 });
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('incidentModal');
+    if (event.target === modal) {
+        closeModal();
+    }
+}

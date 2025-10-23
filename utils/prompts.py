@@ -32,16 +32,33 @@ Conversation History:
 Current Context:
 - Has active incident: {has_active_incident}
 - Session ID: {session_id}
+- Is right after greeting: {is_after_greeting}
 
 Detect the following intents:
-1. GREETING - User is greeting (hi, hello, hey, good morning, etc.)
-2. TRACK_INCIDENT - User wants to check status of existing incident
-3. NEW_INCIDENT - User wants to report a new technical issue
-4. CLOSE_INCIDENT - User wants to close/finish current incident
-5. CLEAR_SESSION - User wants to clear session/start fresh (exit, clear, end session, etc.)
-6. CONTINUE_INCIDENT - User is providing information for current incident
-7. GENERAL_QUERY - General question or conversation
-8. PROVIDE_INCIDENT_ID - User is providing an incident ID for tracking
+1. GREETING - User is greeting (hi, hello, hey, good morning, etc.) with NO active incident
+2. GREETING_CONTEXT - User is greeting while there's an active incident
+3. TRACK_INCIDENT - User wants to check status of existing incident
+4. ASK_INCIDENT_TYPE - User said "create incident" or "new incident" right after greeting WITHOUT describing actual problem
+5. NEW_INCIDENT - User is describing an actual technical problem (e.g., "outlook not working", "VPN down", "can't install python")
+6. CLOSE_INCIDENT - User wants to close/finish current incident
+7. CLEAR_SESSION - User wants to clear session/start fresh (exit, clear, end session, start, restart, etc.)
+8. CONTINUE_INCIDENT - User is providing information for current incident
+9. GENERAL_QUERY - General question or conversation with NO active incident
+10. UNRELATED_QUERY - User asks unrelated question while there's an active incident
+11. PROVIDE_INCIDENT_ID - User is providing an incident ID for tracking
+12. ASK_PREVIOUS_SOLUTION - User wants to view previous solution or continue previous incident
+
+CRITICAL RULES:
+- If has_active_incident is TRUE and user greets, use GREETING_CONTEXT
+- If has_active_incident is TRUE and user asks completely unrelated question, use UNRELATED_QUERY
+- If is_after_greeting is TRUE and user says "create incident" WITHOUT describing technical problem, use ASK_INCIDENT_TYPE
+- If user asks about previous incidents/solutions without specific ID, use ASK_PREVIOUS_SOLUTION
+
+Examples:
+- "hi" with active incident → GREETING_CONTEXT
+- "what's the weather?" with active incident → UNRELATED_QUERY
+- "create a incident" after greeting → ASK_INCIDENT_TYPE
+- "view my previous solution" → ASK_PREVIOUS_SOLUTION
 
 Respond in JSON format:
 {{
@@ -101,45 +118,42 @@ Generate a polite response that:
 
 Provide only the response text, no JSON."""
 
-INCIDENT_STATUS_RESPONSE_PROMPT = """Generate a response about the incident status.
+INCIDENT_STATUS_RESPONSE_PROMPT = """Generate a response about the incident status in paragraph format.
 
 Incident Details:
 {incident_details}
 
-Generate a response that:
-1. Confirms the incident ID
-2. Provides the current status
-3. Summarizes the issue
-4. Shows collected information if any
-5. Mentions next steps if applicable
-6. Be clear and informative
+Generate a natural paragraph response that includes:
+1. Incident ID
+2. Current status
+3. Brief issue summary
+4. Collected information (if any)
+5. End with: "Message from Admin: [admin_message]"
 
-Provide only the response text, no JSON."""
+CRITICAL RULES:
+- Write in paragraph format, NOT bullet points
+- The admin message MUST be at the very end
+- If admin_message is empty or default, show the default message based on status
+- Make it conversational and easy to read
 
-CLOSE_INCIDENT_CONFIRMATION_PROMPT = """Generate a confirmation message for closing an incident.
+Default messages by status:
+- pending_info: "Still need some information."
+- open: "All information collected. Our team will contact you soon."
+- resolved: (use the custom admin message if provided, otherwise: "Incident has been resolved successfully.")
 
-Incident ID: {incident_id}
-Incident Issue: {incident_issue}
+Example output:
+"Your incident INC20251022161532 regarding VPN connection failure is currently resolved. We collected the following information: Operating System - Windows 11, Error Code - 0x800. All required information has been gathered. Message from Admin: The VPN issue has been fixed by our network team."
 
-Generate a response that:
-1. Confirms the incident will be closed
-2. Thanks the user
-3. Mentions the incident ID and that it's been saved
-4. Offers to help with anything else
-5. Be professional and warm
-
-Provide only the response text, no JSON."""
-
-CLEAR_SESSION_CONFIRMATION_PROMPT = """Generate a confirmation message for clearing the session.
+Provide only the response text, no JSON or formatting markers."""
+CLEAR_SESSION_CONFIRMATION_PROMPT = """Generate the exact same greeting response as initial greeting.
 
 Generate a response that:
-1. Confirms the session will be cleared
-2. Thanks the user for using the service
-3. Mentions they can start fresh anytime
-4. Be brief and professional
+1. Greets the user warmly
+2. Introduces yourself as IT helpdesk assistant
+3. Says exactly: "How may I help you? Do you want to track an already created incident or create a new one?"
+4. Be identical to the initial greeting
 
 Provide only the response text, no JSON."""
-
 KB_QUESTION_PROMPT = """Based on the knowledge base entry below, you need to gather information from the user.
 
 Knowledge Base Entry:
@@ -235,51 +249,17 @@ Respond with a JSON object:
     "referenced_incident_id": "INC_ID or null",
     "clarification_message": "Your message to user"
 }}"""
-INTENT_DETECTION_PROMPT = """Analyze the user's message to detect their intent. Consider the conversation context.
+
+ASK_PREVIOUS_SOLUTION_PROMPT = """The user wants to view a previous solution or continue a previous incident.
 
 User Message: {user_input}
 
-Conversation History:
-{conversation_history}
+Generate a response that:
+1. Asks the user to provide the Incident ID
+2. Explains they can view solutions or continue previous conversations
+3. Be helpful and clear
 
-Current Context:
-- Has active incident: {has_active_incident}
-- Session ID: {session_id}
-- Is right after greeting: {is_after_greeting}
-
-Detect the following intents:
-1. GREETING - User is greeting (hi, hello, hey, good morning, etc.)
-2. TRACK_INCIDENT - User wants to check status of existing incident
-3. ASK_INCIDENT_TYPE - User said "create incident" or "new incident" right after greeting WITHOUT describing actual problem
-4. NEW_INCIDENT - User is describing an actual technical problem (e.g., "outlook not working", "VPN down", "can't install python")
-5. CLOSE_INCIDENT - User wants to close/finish current incident
-6. CLEAR_SESSION - User wants to clear session/start fresh (exit, clear, end session, start, restart, etc.)
-7. CONTINUE_INCIDENT - User is providing information for current incident
-8. GENERAL_QUERY - General question or conversation
-9. PROVIDE_INCIDENT_ID - User is providing an incident ID for tracking
-
-CRITICAL RULES:
-- If is_after_greeting is TRUE and user says "create incident" or "new incident" WITHOUT describing a technical problem, use ASK_INCIDENT_TYPE
-- If is_after_greeting is TRUE and user says "track incident", use TRACK_INCIDENT
-- Only use NEW_INCIDENT when user describes an ACTUAL technical problem with details
-- "start" or "restart" should map to CLEAR_SESSION
-
-Examples:
-- "create a incident" after greeting → ASK_INCIDENT_TYPE (no problem described)
-- "track a incident" after greeting → TRACK_INCIDENT (wants to check existing)
-- "outlook not opening" → NEW_INCIDENT (actual problem)
-- "VPN connection failing" → NEW_INCIDENT (actual problem)
-
-Respond in JSON format:
-{{
-    "intent": "PRIMARY_INTENT",
-    "confidence": 0.0-1.0,
-    "secondary_intent": "SECONDARY_INTENT or null",
-    "extracted_incident_id": "incident_id or null",
-    "reasoning": "brief explanation",
-    "requires_clarification": true/false
-}}"""
-# Add these new prompts at the end of utils/prompts.py
+Provide only the response text, no JSON."""
 
 PREVIOUS_SOLUTION_QUERY_PROMPT = """The user is asking about a previous incident or solution.
 
@@ -301,7 +281,6 @@ Generate a response that:
 
 Provide only the response text, no JSON."""
 
-
 INCIDENT_SELECTION_PROMPT = """The user needs to select which incident to discuss after choosing KEEP.
 
 Active Incidents:
@@ -314,7 +293,6 @@ Generate a response that:
 4. Be clear and concise
 
 Provide only the response text, no JSON."""
-
 
 CONTINUE_FROM_STOPPED_PROMPT = """Continue the incident conversation from where it previously stopped.
 

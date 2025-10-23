@@ -6,6 +6,7 @@ from utils.preprocessing import parse_kb_file
 from typing import Dict, List, Any, Optional
 import logging
 import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +83,8 @@ class KBService:
             logger.error(f"Error initializing KB: {e}")
             return False
     
-    # In backend/services/kb_service.py - Update append_to_kb_file method
-
     def append_to_kb_file(self, kb_id: str, use_case: str, required_info: List[str], solution_steps: List[str]):
-        """Append new KB entry to kb_data.txt file"""
+        """Append new KB entry to kb_data.txt file with proper formatting"""
         try:
             logger.info(f"=== STARTING KB FILE APPEND ===")
             logger.info(f"KB ID: {kb_id}")
@@ -100,45 +99,73 @@ class KBService:
             os.makedirs(os.path.dirname(self.kb_file_path), exist_ok=True)
             logger.info(f"Directory ensured: {os.path.dirname(self.kb_file_path)}")
             
-            # Check if file exists and get current stats
+            # Check if file exists and read current content
             file_exists = os.path.exists(self.kb_file_path)
+            current_content = ""
+            
             if file_exists:
-                current_size = os.path.getsize(self.kb_file_path)
+                with open(self.kb_file_path, 'r', encoding='utf-8') as f:
+                    current_content = f.read()
+                current_size = len(current_content)
                 logger.info(f"📄 File exists, current size: {current_size} bytes")
             else:
                 logger.info("📄 File does not exist, will create new file")
+                # Create initial header for new file
+                current_content = "# Knowledge Base Entries\n"
+                current_content += f"# Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                current_content += "# Total Entries: 0\n\n"
             
-            # Format the entry
-            entry_text = f"\n\n{'='*50}\n"
-            entry_text += f"[KB_ID: {kb_id}]\n\n"
-            entry_text += f"Use Case: {use_case}\n\n"
+            # Extract KB number from kb_id
+            if kb_id.startswith('KB_'):
+                kb_number = kb_id.split('_')[1]
+            else:
+                kb_number = kb_id[2:] if kb_id.startswith('KB') else kb_id
+            
+            # Format the new entry exactly like existing entries
+            new_entry = f"\n{'='*50}\n"
+            new_entry += f"[KB_ID: {kb_number}]\n\n"
+            new_entry += f"Use Case: {use_case}\n\n"
             
             if required_info:
-                entry_text += "Required Info:\n"
+                new_entry += "Required Info:\n"
                 for info in required_info:
-                    entry_text += f"- {info}\n"
-                entry_text += "\n"
+                    new_entry += f"- {info}\n"
+                new_entry += "\n"
             
-            entry_text += "Solution Steps:\n"
+            new_entry += "Solution Steps:\n"
             if isinstance(solution_steps, list):
                 for step in solution_steps:
-                    entry_text += f"{step}\n"
+                    # Ensure each step starts with a bullet point
+                    if not step.strip().startswith('-'):
+                        new_entry += f"- {step}\n"
+                    else:
+                        new_entry += f"{step}\n"
             else:
-                entry_text += f"{solution_steps}\n"
+                # If it's a string, split by newlines and format as bullets
+                steps = solution_steps.split('\n')
+                for step in steps:
+                    step_clean = step.strip()
+                    if step_clean and not step_clean.startswith('-'):
+                        new_entry += f"- {step_clean}\n"
+                    elif step_clean:
+                        new_entry += f"{step_clean}\n"
             
-            entry_text += f"\n{'-'*50}"
+            new_entry += f"{'-'*50}"
             
-            logger.info(f"Entry text length: {len(entry_text)} characters")
+            logger.info(f"New entry length: {len(new_entry)} characters")
             
             # Append to file
-            with open(self.kb_file_path, 'a', encoding='utf-8') as f:
-                f.write(entry_text)
+            with open(self.kb_file_path, 'w', encoding='utf-8') as f:
+                f.write(current_content + new_entry)
             
             # Verify the write
             new_size = os.path.getsize(self.kb_file_path)
             logger.info(f"✅ File write completed, new size: {new_size} bytes")
-            logger.info(f"=== KB FILE APPEND COMPLETED ===")
             
+            # Update the header with new entry count
+            self._update_kb_file_header()
+            
+            logger.info(f"=== KB FILE APPEND COMPLETED ===")
             return True
             
         except Exception as e:
@@ -146,9 +173,42 @@ class KBService:
             import traceback
             logger.error(traceback.format_exc())
             return False
+
+    def _update_kb_file_header(self):
+        """Update the KB file header with current entry count and timestamp"""
+        try:
+            if not os.path.exists(self.kb_file_path):
+                return
+            
+            with open(self.kb_file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Count KB entries
+            entry_count = content.count('[KB_ID:')
+            
+            # Update header
+            lines = content.split('\n')
+            updated_lines = []
+            
+            for line in lines:
+                if line.startswith('# Last Updated:'):
+                    updated_lines.append(f"# Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                elif line.startswith('# Total Entries:'):
+                    updated_lines.append(f"# Total Entries: {entry_count}")
+                else:
+                    updated_lines.append(line)
+            
+            # Write back with updated header
+            with open(self.kb_file_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(updated_lines))
+                
+            logger.info(f"✅ KB file header updated: {entry_count} entries")
+            
+        except Exception as e:
+            logger.error(f"Error updating KB file header: {e}")
     
-    def search_kb(self, query: str, n_results: int = 3) -> Dict[str, Any]:
-        """Search knowledge base for similar entries"""
+    def search_kb(self, query: str, n_results: int = 5) -> Dict[str, Any]:  # Increased n_results
+        """Search knowledge base for similar entries with improved matching"""
         try:
             query_embedding = embedding_service.generate_query_embedding(query)
             
@@ -159,6 +219,7 @@ class KBService:
             
             matches = []
             best_match = None
+            highest_similarity = 0
             
             if results and results['ids'] and results['ids'][0]:
                 for i in range(len(results['ids'][0])):
@@ -169,11 +230,25 @@ class KBService:
                     
                     similarity = 1 - distance
                     
-                    logger.info(f"KB Match: {kb_id} - {metadata.get('use_case', '')} - Similarity: {similarity:.3f}")
+                    # Calculate additional similarity factors
+                    use_case = metadata.get('use_case', '').lower()
+                    query_lower = query.lower()
+                    
+                    # Keyword overlap bonus
+                    use_case_words = set(use_case.split())
+                    query_words = set(query_lower.split())
+                    keyword_overlap = len(use_case_words.intersection(query_words)) / len(use_case_words.union(query_words)) if use_case_words.union(query_words) else 0
+                    
+                    # Enhanced similarity with keyword bonus
+                    enhanced_similarity = similarity + (keyword_overlap * 0.2)
+                    enhanced_similarity = min(enhanced_similarity, 1.0)  # Cap at 1.0
+                    
+                    logger.info(f"KB Match: {kb_id} - Similarity: {similarity:.3f}, Enhanced: {enhanced_similarity:.3f}, Keywords: {keyword_overlap:.3f}")
                     
                     match_data = {
                         'kb_id': kb_id,
                         'similarity': similarity,
+                        'enhanced_similarity': enhanced_similarity,
                         'use_case': metadata.get('use_case', ''),
                         'required_info': metadata.get('required_info', '').split(','),
                         'questions': metadata.get('questions', '').split(','),
@@ -183,21 +258,32 @@ class KBService:
                     
                     matches.append(match_data)
                     
-                    if similarity >= self.similarity_threshold and best_match is None:
+                    # Use enhanced similarity for best match determination
+                    if enhanced_similarity > highest_similarity:
+                        highest_similarity = enhanced_similarity
                         best_match = match_data
-                        logger.info(f"✅ Best KB match found: {kb_id} with similarity {similarity:.3f}")
             
-            if not best_match:
-                logger.info(f"❌ No KB match found above threshold {self.similarity_threshold}")
+            # Adjust threshold dynamically based on match quality
+            dynamic_threshold = self.similarity_threshold
+            if highest_similarity > 0.4 and highest_similarity < self.similarity_threshold:
+                # If we have a decent match but below threshold, consider context
+                dynamic_threshold = highest_similarity - 0.1
+            
+            if best_match and best_match['enhanced_similarity'] >= dynamic_threshold:
+                logger.info(f"✅ Best KB match found: {best_match['kb_id']} with enhanced similarity {best_match['enhanced_similarity']:.3f}")
+            else:
+                logger.info(f"❌ No KB match found above dynamic threshold {dynamic_threshold:.3f}")
+                best_match = None
             
             return {
                 "matches": matches,
-                "best_match": best_match
+                "best_match": best_match,
+                "highest_enhanced_similarity": highest_similarity
             }
             
         except Exception as e:
             logger.error(f"Error searching KB: {e}")
-            return {"matches": [], "best_match": None}
+            return {"matches": [], "best_match": None, "highest_enhanced_similarity": 0}
     
     def get_kb_entry(self, kb_id: str) -> Optional[Dict[str, Any]]:
         """Get specific KB entry by ID"""

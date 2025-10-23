@@ -1,4 +1,4 @@
-#backend/services/llm_service.py
+# backend/services/llm_service.py
 import google.generativeai as genai
 from core.config import settings
 from typing import Dict, List, Any, Optional
@@ -34,7 +34,7 @@ class LLMService:
     
     def detect_intent(self, user_input: str, conversation_history: List[Dict], 
                      has_active_incident: bool, session_id: str) -> Dict[str, Any]:
-        """Detect user intent using LLM"""
+        """Detect user intent using LLM with improved context awareness"""
         from utils.prompts import INTENT_DETECTION_PROMPT
         
         conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-10:]])
@@ -46,18 +46,38 @@ class LLMService:
             if 'track' in last_bot_msg and 'create' in last_bot_msg and 'how may i help' in last_bot_msg:
                 is_after_greeting = True
         
-        # Direct keyword check for common patterns right after greeting
+        # Check for context-aware patterns
         user_lower = user_input.lower().strip()
         
-        if is_after_greeting:
-            logger.info("Detected message right after greeting")
-            # User just got the greeting, now responding
-            if any(phrase in user_lower for phrase in ['track', 'check status', 'view incident', 'my incident', 'existing incident']):
-                logger.info("User wants to track incident")
-                return {"intent": "TRACK_INCIDENT", "confidence": 0.95, "reasoning": "User wants to track after greeting"}
-            elif any(phrase in user_lower for phrase in ['create', 'new incident', 'report', 'open incident']):
-                logger.info("User wants to create incident - asking for issue type")
-                return {"intent": "ASK_INCIDENT_TYPE", "confidence": 0.95, "reasoning": "User said create incident but hasn't described problem yet"}
+        # If there's an active incident and user seems to be changing topic
+        if has_active_incident:
+            # Check if this is related to current incident context
+            current_context_keywords = self._extract_context_keywords(conversation_history)
+            is_related = self._is_related_to_context(user_input, current_context_keywords)
+            
+            if not is_related:
+                # Check if it's a greeting
+                if any(word in user_lower for word in ['hi', 'hello', 'hey', 'good morning', 'good afternoon']):
+                    return {
+                        "intent": "GREETING_CONTEXT",
+                        "confidence": 0.9,
+                        "reasoning": "User greeted while having active incident"
+                    }
+                # Check if it's completely unrelated
+                elif not self._is_technical_query(user_input):
+                    return {
+                        "intent": "UNRELATED_QUERY",
+                        "confidence": 0.8,
+                        "reasoning": "User asked unrelated question during active incident"
+                    }
+        
+        # Check for previous solution intent
+        if self._is_asking_about_previous_solution(user_input):
+            return {
+                "intent": "ASK_PREVIOUS_SOLUTION",
+                "confidence": 0.85,
+                "reasoning": "User is asking about previous incidents or solutions"
+            }
         
         prompt = INTENT_DETECTION_PROMPT.format(
             user_input=user_input,
@@ -81,6 +101,52 @@ class LLMService:
             logger.error(f"Error parsing intent: {e}")
         
         # Fallback to simple keyword detection
+        return self._fallback_intent_detection(user_input, has_active_incident)
+    
+    def _extract_context_keywords(self, conversation_history: List[Dict]) -> List[str]:
+        """Extract keywords from recent conversation for context awareness"""
+        recent_text = " ".join([msg['content'] for msg in conversation_history[-4:]])
+        words = re.findall(r'\b\w+\b', recent_text.lower())
+        # Return most frequent words (excluding common words)
+        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'}
+        word_freq = {}
+        for word in words:
+            if word not in common_words and len(word) > 3:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        return sorted(word_freq, key=word_freq.get, reverse=True)[:5]
+    
+    def _is_related_to_context(self, user_input: str, context_keywords: List[str]) -> bool:
+        """Check if user input is related to current context"""
+        if not context_keywords:
+            return False
+        user_words = set(re.findall(r'\b\w+\b', user_input.lower()))
+        overlap = user_words.intersection(set(context_keywords))
+        return len(overlap) > 0
+    
+    def _is_technical_query(self, user_input: str) -> bool:
+        """Check if query seems technical"""
+        tech_keywords = {
+            'install', 'error', 'problem', 'issue', 'not working', 'broken', 'fix',
+            'password', 'login', 'access', 'vpn', 'network', 'wifi', 'email',
+            'outlook', 'software', 'hardware', 'update', 'upgrade', 'reset'
+        }
+        user_words = set(re.findall(r'\b\w+\b', user_input.lower()))
+        return len(user_words.intersection(tech_keywords)) > 0
+    
+    def _is_asking_about_previous_solution(self, user_input: str) -> bool:
+        """Check if user is asking about previous incidents/solutions"""
+        previous_keywords = {
+            'previous', 'last', 'earlier', 'before', 'my incident', 'solution', 
+            'what happened', 'status', 'view solution', 'continue my', 'old incident',
+            'past incident', 'earlier issue'
+        }
+        user_lower = user_input.lower()
+        return any(keyword in user_lower for keyword in previous_keywords)
+    
+    def _fallback_intent_detection(self, user_input: str, has_active_incident: bool) -> Dict[str, Any]:
+        """Fallback intent detection using keyword matching"""
+        user_lower = user_input.lower().strip()
+        
         if any(word in user_lower for word in ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']):
             return {"intent": "GREETING", "confidence": 0.9}
         elif any(word in user_lower for word in ['track', 'check', 'status', 'view incident', 'my incident']):
@@ -92,6 +158,8 @@ class LLMService:
         elif re.search(r'INC\d+', user_input):
             incident_id = re.search(r'INC\d+', user_input).group()
             return {"intent": "PROVIDE_INCIDENT_ID", "confidence": 0.9, "extracted_incident_id": incident_id}
+        elif any(word in user_lower for word in ['previous', 'last', 'solution', 'view solution']):
+            return {"intent": "ASK_PREVIOUS_SOLUTION", "confidence": 0.8}
         else:
             return {"intent": "CONTINUE_INCIDENT" if has_active_incident else "NEW_INCIDENT", "confidence": 0.6}
     

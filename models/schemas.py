@@ -1,4 +1,4 @@
-#backend/models/schemas.py
+# backend/models/schemas.py
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -50,6 +50,7 @@ class IncidentCreate(BaseModel):
     conversation_history: List[Dict[str, str]] = Field(default_factory=list)
     is_new_kb_entry: bool = False
     needs_kb_approval: bool = False
+    admin_message: Optional[str] = None  # Add this field
     created_on: datetime = Field(default_factory=get_ist_time)
     updated_on: datetime = Field(default_factory=get_ist_time)
 
@@ -60,6 +61,7 @@ class IncidentUpdate(BaseModel):
     missing_info: Optional[List[str]] = None
     conversation_history: Optional[List[Dict[str, str]]] = None
     solution_steps: Optional[str] = None
+    admin_message: Optional[str] = None  # Add this field
     updated_on: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -92,5 +94,6 @@ class SessionData(BaseModel):
     session_id: str
     active_incidents: List[str] = Field(default_factory=list)
     conversation_context: List[Dict[str, str]] = Field(default_factory=list)
-    created_on: datetime = Field(default_factory=datetime.utcnow)
-    updated_on: datetime = Field(default_factory=datetime.utcnow)
+    created_on: datetime = Field(default_factory=get_ist_time)
+    updated_on: datetime = Field(default_factory=get_ist_time)
+    

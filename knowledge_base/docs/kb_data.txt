@@ -1,6 +1,6 @@
 # Knowledge Base Entries
-# Last Updated: 2025-10-23 12:33:24
-# Total Entries: 6
+# Last Updated: 2025-10-23 17:37:58
+# Total Entries: 7
 
 
 ==================================================
@@ -114,9 +114,8 @@ Solution Steps:
   - Escalate to hardware team if issue persists after optimization.
 --------------------------------------------------
 
-
 ==================================================
-[KB_ID: KB_7]
+[KB_ID: 7]
 
 Use Case: printer is not working
 
@@ -139,5 +138,4 @@ Verify printer settings (correct paper type and quality).
 Update or reinstall printer drivers.
 
 Try printing from a different application or document.
-
 --------------------------------------------------

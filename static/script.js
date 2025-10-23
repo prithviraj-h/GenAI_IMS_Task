@@ -1,4 +1,4 @@
-// backend/static/script.js
+// static/script.js
 let sessionId = null;
 let currentIncidentId = null;
 let isProcessing = false;
@@ -24,6 +24,25 @@ userInput.addEventListener('keypress', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     userInput.focus();
 });
+
+// Action button handler
+function handleActionButton(button) {
+    console.log('Action button clicked:', button.getAttribute('data-value'));
+    
+    // Disable all buttons in the same container
+    const buttonContainer = button.closest('.action-buttons-container');
+    const allButtons = buttonContainer.querySelectorAll('.action-button');
+    allButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.style.cursor = 'not-allowed';
+    });
+    
+    // Set the input value and send message
+    const value = button.getAttribute('data-value');
+    document.getElementById('userInput').value = value;
+    sendMessage();
+}
 
 async function sendMessage() {
     const message = userInput.value.trim();
@@ -132,7 +151,7 @@ function addMessage(text, type) {
 }
 
 function addMessageWithButtons(text, type, buttons) {
-    console.log('Adding message with buttons:', buttons); // Debug log
+    console.log('Adding message with buttons:', buttons);
     
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}-message`;
@@ -147,70 +166,17 @@ function addMessageWithButtons(text, type, buttons) {
     // Create button container
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'action-buttons-container';
-    buttonContainer.style.marginTop = '15px';
-    buttonContainer.style.paddingTop = '15px';
-    buttonContainer.style.borderTop = '1px solid #e0e0e0';
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.gap = '12px';
-    buttonContainer.style.flexWrap = 'wrap';
     
     // Add buttons
     buttons.forEach((button, index) => {
-        console.log(`Creating button ${index}:`, button); // Debug log
+        console.log(`Creating button ${index}:`, button);
         
         const btn = document.createElement('button');
         btn.textContent = button.label;
         btn.className = 'action-button';
         btn.setAttribute('data-value', button.value);
-        
-        // Inline styles as fallback
-        btn.style.padding = '12px 24px';
-        btn.style.border = 'none';
-        btn.style.borderRadius = '10px';
-        btn.style.fontSize = '15px';
-        btn.style.fontWeight = '600';
-        btn.style.cursor = 'pointer';
-        btn.style.transition = 'all 0.3s ease';
-        btn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
-        btn.style.textTransform = 'uppercase';
-        btn.style.letterSpacing = '0.5px';
-        btn.style.color = 'white';
-        
-        // Set gradient based on value
-        if (button.value.toLowerCase().includes('keep')) {
-            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-        } else if (button.value.toLowerCase().includes('ignore')) {
-            btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-        } else if (button.value.toLowerCase().includes('track')) {
-            btn.style.background = 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)';
-        } else if (button.value.toLowerCase().includes('create')) {
-            btn.style.background = 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)';
-        } else {
-            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-        }
-        
         btn.onclick = function() {
-            console.log('Button clicked:', button.value); // Debug log
-            
-            // Disable all buttons after click
-            const allButtons = buttonContainer.querySelectorAll('.action-button');
-            allButtons.forEach(b => b.disabled = true);
-            
-            // Send the button value as message
-            userInput.value = button.value;
-            sendMessage();
-        };
-        
-        btn.onmouseover = function() {
-            btn.style.transform = 'translateY(-2px)';
-            btn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.25)';
-        };
-        
-        btn.onmouseout = function() {
-            if (!btn.disabled) {
-                btn.style.transform = 'translateY(0)';
-                btn.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
-            }
+            handleActionButton(this);
         };
         
         buttonContainer.appendChild(btn);
@@ -288,7 +254,11 @@ function formatStatus(status) {
         'awaiting_decision': 'Awaiting Decision',
         'awaiting_incident_id': 'Awaiting Incident ID',
         'not_found': 'Not Found',
-        'awaiting_issue_description': 'Awaiting Issue Description'
+        'awaiting_issue_description': 'Awaiting Issue Description',
+        'awaiting_previous_incident_id': 'Awaiting Previous Incident ID',
+        'solution_displayed': 'Solution Displayed',
+        'incident_not_found': 'Incident Not Found',
+        'awaiting_incident_selection': 'Awaiting Incident Selection'
     };
     
     return statusMap[status] || status;
@@ -318,15 +288,25 @@ async function clearSession() {
         // Clear chat messages
         chatMessages.innerHTML = '';
         
-        // Add welcome message
-        addMessage("Session cleared! Hello! I'm your IT helpdesk assistant. How may I help you? Do you want to track an already created incident or create a new one?", 'bot');
+        // Add welcome message with buttons (same as initial greeting)
+        const welcomeMessage = "Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you. How may I help you? Do you want to track an already created incident or create a new one?";
+        
+        const buttons = [
+            {label: 'Track Incident', value: 'track a incident'},
+            {label: 'Create New Incident', value: 'create a incident'},
+            {label: 'View Previous Solution', value: 'view previous solution'}
+        ];
+        
+        addMessageWithButtons(welcomeMessage, 'bot', buttons);
         
         // Reset UI
         currentIncidentId = null;
         currentIncidentDisplay.textContent = 'None';
         incidentStatusDisplay.textContent = '-';
         
-        alert('Session cleared successfully!');
+        // Update session ID
+        sessionId = data.session_id;
+        sessionIdDisplay.textContent = sessionId.substring(0, 8) + '...';
         
     } catch (error) {
         console.error('Error clearing session:', error);

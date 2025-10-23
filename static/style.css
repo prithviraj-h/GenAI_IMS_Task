@@ -1,5 +1,4 @@
-/* backend/static/style.css */
-
+/* static/style.css */
 * {
     margin: 0;
     padding: 0;
@@ -259,6 +258,73 @@ body {
     }
 }
 
+/* Action buttons within bot messages */
+.action-buttons-container {
+    display: flex;
+    gap: 12px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+.action-button {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: white;
+    border: 2px solid transparent;
+}
+
+.action-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.action-button:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Button colors based on data-value */
+/* Updated button colors */
+.action-button[data-value*="track"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.action-button[data-value*="create"] {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.action-button[data-value*="view previous"] {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.action-button[data-value*="keep"] {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.action-button[data-value*="ignore"] {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+/* Make buttons look integrated with bot message */
+.bot-message .action-buttons-container {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 15px;
+    margin-top: 15px;
+}
+
 /* Modal styles */
 .modal {
     display: none;
@@ -465,66 +531,13 @@ body {
     .modal-body {
         padding: 20px;
     }
-}
-/* Action buttons within bot messages */
-.action-buttons-container {
-    display: flex;
-    gap: 12px;
-    margin-top: 15px;
-    flex-wrap: wrap;
-}
 
-.action-button {
-    padding: 12px 24px;
-    border: none;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
+    .action-buttons-container {
+        flex-direction: column;
+    }
 
-.action-button:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.action-button:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.action-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Button colors based on data-value */
-.action-button[data-value="keep"] {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-}
-
-.action-button[data-value="ignore"] {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
-}
-
-.action-button[data-value="track"] {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    color: white;
-}
-
-.action-button[data-value="create"] {
-    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-    color: white;
-}
-
-/* Make buttons look integrated with bot message */
-.bot-message .action-buttons-container {
-    border-top: 1px solid #e0e0e0;
-    padding-top: 15px;
-    margin-top: 15px;
+    .action-button {
+        width: 100%;
+        text-align: center;
+    }
 }
