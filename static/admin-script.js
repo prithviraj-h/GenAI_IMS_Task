@@ -27,7 +27,7 @@ async function loadIncidents() {
     } catch (error) {
         console.error('Error loading incidents:', error);
         document.getElementById('incidentsList').innerHTML = 
-            '<p class="error">Error loading incidents. Please try again.</p>';
+            '<p class="error"><i class="bx bx-error-circle"></i> Error loading incidents. Please try again.</p>';
     }
 }
 
@@ -50,7 +50,7 @@ function displayIncidents(incidents) {
     const container = document.getElementById('incidentsList');
     
     if (!incidents || incidents.length === 0) {
-        container.innerHTML = '<p class="no-data">No incidents found.</p>';
+        container.innerHTML = '<p class="no-data"><i class="bx bx-inbox"></i> No security incidents found.</p>';
         return;
     }
     
@@ -63,61 +63,133 @@ function displayIncidents(incidents) {
             <div class="incident-header">
                 <div>
                     <h3 class="incident-id" onclick="viewIncident('${incident.incident_id}')">
-                        ${incident.incident_id} ${newBadge}
+                        <i class='bx bx-shield-x'></i> ${incident.incident_id} ${newBadge}
                     </h3>
-                    <p class="incident-use-case">${incident.use_case || incident.user_demand}</p>
+                    <p class="incident-use-case">${incident.use_case || incident.user_demand || 'No description available'}</p>
                 </div>
                 <div class="incident-badges">
-                    <span class="status-badge status-${incident.status}">${incident.status}</span>
-                    ${incident.needs_kb_approval ? '<span class="kb-approval-badge">Needs KB Approval</span>' : ''}
-                    ${incident.is_new_kb_entry ? '<span class="new-kb-badge">New Issue Type</span>' : ''}
+                    <span class="status-badge status-${incident.status}">
+                        <i class='bx ${getStatusIcon(incident.status)}'></i> ${incident.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                    ${incident.needs_kb_approval ? 
+                        '<span class="kb-approval-badge"><i class="bx bx-check-shield"></i> NEEDS APPROVAL</span>' 
+                        : ''}
+                    ${incident.is_new_kb_entry ? 
+                        '<span class="new-kb-badge"><i class="bx bx-star"></i> NEW PATTERN</span>' 
+                        : ''}
                 </div>
             </div>
             
             <div class="incident-info">
                 <div class="info-row">
-                    <span class="label">Created:</span>
+                    <span class="label"><i class='bx bx-calendar-plus'></i> Created:</span>
                     <span>${formatDate(incident.created_on)}</span>
                 </div>
                 <div class="info-row">
-                    <span class="label">Updated:</span>
+                    <span class="label"><i class='bx bx-calendar-edit'></i> Updated:</span>
                     <span>${formatDate(incident.updated_on)}</span>
                 </div>
                 <div class="info-row">
-                    <span class="label">Session:</span>
-                    <span>${incident.session_id}</span>
+                    <span class="label"><i class='bx bx-id-card'></i> Session:</span>
+                    <span class="session-id">${incident.session_id || 'N/A'}</span>
                 </div>
             </div>
             
             <div class="incident-actions">
-                <button class="btn-view" onclick="viewIncident('${incident.incident_id}')">View Details</button>
+                <button class="btn-view" onclick="viewIncident('${incident.incident_id}')">
+                    <i class='bx bx-search-alt'></i> Investigate
+                </button>
                 ${incident.needs_kb_approval ? 
-                    `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">Approve KB Entry</button>` 
+                    `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">
+                        <i class='bx bx-check-shield'></i> Approve Solution
+                    </button>` 
                     : ''}
                 ${incident.status !== 'resolved' ? 
-                    `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">Mark as Resolved</button>` 
+                    `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">
+                        <i class='bx bx-check-double'></i> Mark Resolved
+                    </button>` 
                     : ''}
+                <button class="btn-delete" onclick="deleteIncident('${incident.incident_id}')">
+                    <i class='bx bx-trash-alt'></i> Archive
+                </button>
             </div>
         </div>
         `;
     }).join('');
 }
 
+function getStatusIcon(status) {
+    switch(status) {
+        case 'pending_info': return 'bx-time-five';
+        case 'open': return 'bx-error-circle';
+        case 'resolved': return 'bx-check-double';
+        default: return 'bx-circle';
+    }
+}
+
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (diffDays === 1) {
-        return 'Today, ' + date.toLocaleTimeString();
-    } else if (diffDays === 2) {
-        return 'Yesterday, ' + date.toLocaleTimeString();
-    } else if (diffDays <= 7) {
-        return `${diffDays - 1} days ago`;
-    } else {
-        return date.toLocaleString();
+    try {
+        const date = new Date(dateString);
+        
+        // Convert to IST (UTC+5:30)
+        const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+        const istTime = new Date(date.getTime() + istOffset);
+        
+        const now = new Date();
+        const diffTime = now - date;
+        const diffMinutes = Math.floor(diffTime / (1000 * 60));
+        const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        // IST time formatting options
+        const timeOptions = { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        };
+        
+        const dateTimeOptions = {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        };
+        
+        if (diffMinutes < 1) {
+            return 'Just now';
+        } else if (diffMinutes < 60) {
+            return `${diffMinutes} minutes ago`;
+        } else if (diffHours < 24) {
+            if (diffHours === 1) {
+                return '1 hour ago';
+            } else {
+                return `${diffHours} hours ago`;
+            }
+        } else if (diffDays === 1) {
+            return 'Yesterday, ' + istTime.toLocaleTimeString('en-IN', timeOptions);
+        } else if (diffDays <= 7) {
+            return `${diffDays} days ago`;
+        } else {
+            return istTime.toLocaleDateString('en-IN', dateTimeOptions);
+        }
+    } catch (e) {
+        console.error('Error formatting date:', e);
+        // Fallback to simple formatting
+        const date = new Date(dateString);
+        return date.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     }
 }
 
@@ -127,7 +199,7 @@ function isIncidentNew(incident) {
     const now = new Date();
     const diffTime = now - created;
     const diffHours = diffTime / (1000 * 60 * 60);
-    return diffHours < 24; // Consider new if created within last 24 hours
+    return diffHours < 2; // Consider new if created within last 24 hours
 }
 
 function filterIncidents() {
@@ -153,105 +225,29 @@ async function viewIncident(incidentId) {
         alert('Error loading incident details');
     }
 }
-// Add this function
 
-
-// Add this to display Chroma entries with delete buttons
-// Add these functions to admin-script.js
-
-async function viewChromaEntries() {
-    try {
-        const response = await fetch('/api/admin/chroma/entries');
-        const data = await response.json();
-        
-        const modal = document.getElementById('incidentModal');
-        const modalBody = document.getElementById('modalBody');
-        
-        let content = `<h2>📚 ChromaDB Knowledge Base Entries</h2>`;
-        content += `<p class="info-note">Total: ${data.total} entries - These are used for semantic search</p>`;
-        content += `<div class="chroma-entries-list">`;
-        
-        if (data.entries && data.entries.length > 0) {
-            data.entries.forEach(entry => {
-                content += `
-                    <div class="chroma-entry-card">
-                        <div class="chroma-entry-header">
-                            <h4>${entry.id}</h4>
-                            <button class="btn-delete" onclick="deleteChromaEntry('${entry.id}')">🗑️ Delete</button>
-                        </div>
-                        <div class="chroma-entry-content">
-                            <p><strong>Use Case:</strong> ${entry.metadata.use_case}</p>
-                            <p><strong>Required Info:</strong> ${entry.metadata.required_info}</p>
-                            <p><strong>Solution Steps Preview:</strong> ${entry.metadata.solution_steps.substring(0, 100)}...</p>
-                            <p><strong>Questions:</strong> ${entry.metadata.questions}</p>
-                        </div>
-                    </div>
-                `;
-            });
-        } else {
-            content += `<p class="no-data">No KB entries found in ChromaDB.</p>`;
-        }
-        
-        content += `</div>`;
-        modalBody.innerHTML = content;
-        modal.style.display = 'block';
-        
-    } catch (error) {
-        console.error('Error loading Chroma entries:', error);
-        alert('Error loading KB entries');
-    }
-}
-
-async function deleteChromaEntry(kbId) {
-    if (!confirm(`Are you sure you want to delete KB entry: ${kbId}?\n\nThis will remove it from the semantic search database and cannot be undone.`)) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/admin/chroma/entries/${kbId}`, {
-            method: 'DELETE'
-        });
-        
-        if (response.ok) {
-            alert('✅ KB entry deleted successfully!');
-            // Close modal and reload
-            closeModal();
-            // Optionally reload the Chroma entries view
-            // viewChromaEntries();
-        } else {
-            const error = await response.json();
-            alert(`❌ Error: ${error.detail || 'Failed to delete KB entry'}`);
-        }
-    } catch (error) {
-        console.error('Error deleting Chroma entry:', error);
-        alert('❌ Error deleting KB entry. Please try again.');
-    }
-}
-
-// Add a button to admin UI to view Chroma entries
-// Add this to your admin.html in the header-actions div:
-// <button class="btn-refresh" onclick="viewChromaEntries()" style="margin-left: 10px;">
-//     📚 View KB Entries
-// </button>
 function showIncidentModal(incident) {
     const modal = document.getElementById('incidentModal');
     const modalBody = document.getElementById('modalBody');
     
     // Format collected info
     const collectedInfoHtml = Object.entries(incident.collected_info || {})
-        .map(([key, value]) => `<li><strong>${key}:</strong> ${value}</li>`)
+        .map(([key, value]) => `<li><i class='bx bx-check'></i> <strong>${key}:</strong> ${value}</li>`)
         .join('');
     
     // Format missing info
     const missingInfoHtml = (incident.missing_info || [])
-        .map(info => `<li>${info}</li>`)
+        .map(info => `<li><i class='bx bx-x-circle'></i> ${info}</li>`)
         .join('');
     
     // Format conversation history
     const conversationHtml = (incident.conversation_history || [])
         .map(msg => `
             <div class="chat-message ${msg.role}">
-                <div class="message-role">${msg.role === 'user' ? 'User' : 'Assistant'}:</div>
+                <div class="message-role">
+                    <i class='bx ${msg.role === 'user' ? 'bx-user' : 'bx-bot'}'></i>
+                    ${msg.role === 'user' ? 'User' : 'Security Analyst'}:
+                </div>
                 <div class="message-content">${msg.content}</div>
                 <div class="message-time">${formatDate(msg.timestamp)}</div>
             </div>
@@ -259,22 +255,22 @@ function showIncidentModal(incident) {
     
     modalBody.innerHTML = `
         <div class="incident-details">
-            <h2>${incident.incident_id}</h2>
+            <h2><i class='bx bx-shield-x'></i> ${incident.incident_id}</h2>
             
             <div class="detail-section">
-                <h3>Overview</h3>
+                <h3><i class='bx bx-info-circle'></i> Security Overview</h3>
                 <table class="detail-table">
                     <tr>
-                        <td><strong>Use Case:</strong></td>
-                        <td>${incident.use_case || incident.user_demand}</td>
+                        <td><strong>Threat Type:</strong></td>
+                        <td>${incident.use_case || incident.user_demand || 'N/A'}</td>
                     </tr>
                     <tr>
                         <td><strong>Status:</strong></td>
-                        <td><span class="status-badge status-${incident.status}">${incident.status}</span></td>
+                        <td><span class="status-badge status-${incident.status}">${incident.status.replace('_', ' ').toUpperCase()}</span></td>
                     </tr>
                     <tr>
                         <td><strong>Session ID:</strong></td>
-                        <td>${incident.session_id}</td>
+                        <td>${incident.session_id || 'N/A'}</td>
                     </tr>
                     <tr>
                         <td><strong>KB ID:</strong></td>
@@ -296,18 +292,18 @@ function showIncidentModal(incident) {
             </div>
             
             <div class="detail-section">
-                <h3>Collected Information</h3>
-                ${collectedInfoHtml ? `<ul class="info-list">${collectedInfoHtml}</ul>` : '<p>No information collected yet.</p>'}
+                <h3><i class='bx bx-check-circle'></i> Collected Evidence</h3>
+                ${collectedInfoHtml ? `<ul class="info-list">${collectedInfoHtml}</ul>` : '<p>No evidence collected yet.</p>'}
             </div>
             
             <div class="detail-section">
-                <h3>Missing Information</h3>
-                ${missingInfoHtml ? `<ul class="info-list">${missingInfoHtml}</ul>` : '<p>All information collected.</p>'}
+                <h3><i class='bx bx-x-circle'></i> Missing Information</h3>
+                ${missingInfoHtml ? `<ul class="info-list">${missingInfoHtml}</ul>` : '<p>All required information collected.</p>'}
             </div>
             
             ${incident.solution_steps ? `
                 <div class="detail-section">
-                    <h3>Solution Steps (Admin Only)</h3>
+                    <h3><i class='bx bx-cog'></i> Resolution Steps</h3>
                     <div class="solution-box">
                         ${incident.solution_steps.split('\n').map(step => `<p>${step}</p>`).join('')}
                     </div>
@@ -315,20 +311,29 @@ function showIncidentModal(incident) {
             ` : ''}
             
             <div class="detail-section">
-                <h3>Conversation History</h3>
+                <h3><i class='bx bx-conversation'></i> Investigation Log</h3>
                 <div class="conversation-box">
-                    ${conversationHtml}
+                    ${conversationHtml || '<p>No investigation log available.</p>'}
                 </div>
             </div>
             
             <div class="modal-actions">
                 ${incident.needs_kb_approval ? 
-                    `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">Approve & Add to KB</button>` 
+                    `<button class="btn-approve" onclick="showKBApprovalModal('${incident.incident_id}')">
+                        <i class='bx bx-check-shield'></i> Approve & Add to KB
+                    </button>` 
                     : ''}
                 ${incident.status !== 'resolved' ? 
-                    `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">Mark as Resolved</button>` 
+                    `<button class="btn-resolve" onclick="resolveIncident('${incident.incident_id}')">
+                        <i class='bx bx-check-double'></i> Mark as Resolved
+                    </button>` 
                     : ''}
-                <button class="btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn-delete" onclick="deleteIncident('${incident.incident_id}')">
+                    <i class='bx bx-trash-alt'></i> Archive Incident
+                </button>
+                <button class="btn-secondary" onclick="closeModal()">
+                    <i class='bx bx-x'></i> Close
+                </button>
             </div>
         </div>
     `;
@@ -342,22 +347,26 @@ function showKBApprovalModal(incidentId) {
     
     modalBody.innerHTML = `
         <div class="kb-approval-form">
-            <h2>Approve KB Entry</h2>
+            <h2><i class='bx bx-check-shield'></i> Approve Security Solution</h2>
             <p>Incident ID: <strong>${incidentId}</strong></p>
             
             <div class="form-group">
-                <label for="solutionSteps">Solution Steps:</label>
+                <label for="solutionSteps"><i class='bx bx-edit-alt'></i> Resolution Protocol:</label>
                 <textarea 
                     id="solutionSteps" 
                     rows="10" 
-                    placeholder="Enter the solution steps for this issue. Each step should be on a new line.&#10;&#10;Example:&#10;- Check the network cable connection&#10;- Restart the router&#10;- Run network diagnostics"
+                    placeholder="Enter the security resolution steps for this incident. Each step should be on a new line.&#10;&#10;Example:&#10;- Isolate affected system from network&#10;- Run malware scan with updated definitions&#10;- Check for suspicious processes&#10;- Review firewall logs for anomalies"
                     required
                 ></textarea>
             </div>
             
             <div class="form-actions">
-                <button class="btn-approve" onclick="approveKBEntry('${incidentId}')">Approve & Add to KB</button>
-                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-approve" onclick="approveKBEntry('${incidentId}')">
+                    <i class='bx bx-check-shield'></i> Approve & Add to KB
+                </button>
+                <button class="btn-secondary" onclick="closeModal()">
+                    <i class='bx bx-x'></i> Cancel
+                </button>
             </div>
         </div>
     `;
@@ -369,7 +378,7 @@ async function approveKBEntry(incidentId) {
     const solutionSteps = document.getElementById('solutionSteps').value.trim();
     
     if (!solutionSteps) {
-        alert('Please enter solution steps');
+        alert('Please enter resolution steps');
         return;
     }
     
@@ -385,22 +394,22 @@ async function approveKBEntry(incidentId) {
         });
         
         if (response.ok) {
-            alert('KB entry approved and added successfully!');
+            alert('Security solution approved and added to knowledge base!');
             closeModal();
             loadIncidents();
             loadStats();
         } else {
             const error = await response.json();
-            alert(`Error: ${error.detail || 'Failed to approve KB entry'}`);
+            alert(`Error: ${error.detail || 'Failed to approve security solution'}`);
         }
     } catch (error) {
         console.error('Error approving KB entry:', error);
-        alert('Error approving KB entry. Please try again.');
+        alert('Error approving security solution. Please try again.');
     }
 }
 
 async function resolveIncident(incidentId) {
-    if (!confirm('Are you sure you want to mark this incident as resolved?')) {
+    if (!confirm('Are you sure you want to mark this security incident as resolved?')) {
         return;
     }
     
@@ -416,7 +425,7 @@ async function resolveIncident(incidentId) {
         });
         
         if (response.ok) {
-            alert('Incident marked as resolved!');
+            alert('Security incident marked as resolved!');
             closeModal();
             loadIncidents();
             loadStats();
@@ -425,7 +434,32 @@ async function resolveIncident(incidentId) {
         }
     } catch (error) {
         console.error('Error resolving incident:', error);
-        alert('Error resolving incident. Please try again.');
+        alert('Error resolving security incident. Please try again.');
+    }
+}
+
+async function deleteIncident(incidentId) {
+    if (!confirm(`Are you sure you want to archive incident ${incidentId}?\n\nThis action will move it to the archives.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/incidents/${incidentId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('Security incident archived successfully!');
+            closeModal();
+            loadIncidents();
+            loadStats();
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.detail || 'Failed to archive incident'}`);
+        }
+    } catch (error) {
+        console.error('Error deleting incident:', error);
+        alert('Error archiving security incident. Please try again.');
     }
 }
 
@@ -441,19 +475,125 @@ window.onclick = function(event) {
     }
 }
 
-// View ChromaDB entries (for debugging)
+// ChromaDB Management Functions
 async function viewChromaEntries() {
     try {
         const response = await fetch('/api/admin/chroma/entries');
         const data = await response.json();
         
-        console.log('ChromaDB Entries:', data);
-        alert(`ChromaDB has ${data.total} entries. Check console for details.`);
+        const modal = document.getElementById('incidentModal');
+        const modalBody = document.getElementById('modalBody');
+        
+        let content = `<h2><i class='bx bx-book-alt'></i> Security Knowledge Base</h2>`;
+        content += `<p class="info-note"><i class='bx bx-info-circle'></i> Total: ${data.total} security patterns - Used for threat detection and analysis</p>`;
+        content += `<div class="chroma-entries-list">`;
+        
+        if (data.entries && data.entries.length > 0) {
+            data.entries.forEach(entry => {
+                content += `
+                    <div class="chroma-entry-card">
+                        <div class="chroma-entry-header">
+                            <h4>${entry.id}</h4>
+                            <button class="btn-delete" onclick="deleteChromaEntry('${entry.id}')">
+                                <i class='bx bx-trash-alt'></i> Remove
+                            </button>
+                        </div>
+                        <div class="chroma-entry-content">
+                            <p><strong>Threat Pattern:</strong> ${entry.metadata.use_case}</p>
+                            <p><strong>Required Evidence:</strong> ${entry.metadata.required_info}</p>
+                            <p><strong>Resolution Protocol:</strong> ${entry.metadata.solution_steps ? entry.metadata.solution_steps.substring(0, 100) + '...' : 'N/A'}</p>
+                            <p><strong>Investigation Questions:</strong> ${entry.metadata.questions}</p>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            content += `<p class="no-data"><i class='bx bx-inbox'></i> No security patterns found in knowledge base.</p>`;
+        }
+        
+        content += `</div>`;
+        modalBody.innerHTML = content;
+        modal.style.display = 'block';
+        
     } catch (error) {
-        console.error('Error loading ChromaDB entries:', error);
-        alert('Error loading ChromaDB entries');
+        console.error('Error loading Chroma entries:', error);
+        alert('Error loading security knowledge base');
+    }
+}
+// Update your admin-script.js deleteChromaEntry function
+
+async function deleteChromaEntry(kbId) {
+    if (!confirm(`Are you sure you want to remove security pattern: ${kbId}?\n\nThis will remove it from both the database and knowledge base file.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/chroma/entries/${kbId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            alert('✅ Security pattern removed successfully! Database and file synchronized.');
+            
+            // Refresh the KB file status
+            await updateKBFileStatus();
+            closeModal();
+        } else {
+            const error = await response.json();
+            alert(`❌ Error: ${error.detail || 'Failed to remove security pattern'}`);
+        }
+    } catch (error) {
+        console.error('Error deleting Chroma entry:', error);
+        alert('❌ Error removing security pattern. Please try again.');
     }
 }
 
-// Add button to view ChromaDB entries (optional)
-// You can call viewChromaEntries() from browser console
+// Add this function to update KB file status
+async function updateKBFileStatus() {
+    try {
+        const response = await fetch('/api/admin/kb/current-file');
+        const data = await response.json();
+        
+        // Update UI with current file status
+        console.log('KB File Status:', data);
+        
+        // You can display this information in your admin panel
+        if (data.file_exists) {
+            console.log(`KB File: ${data.file_size} bytes, ${data.last_modified}`);
+        } else {
+            console.log('KB File: Not found');
+        }
+        
+    } catch (error) {
+        console.error('Error updating KB file status:', error);
+    }
+}
+
+// Add force sync function
+async function forceSyncKB() {
+    try {
+        const response = await fetch('/api/admin/kb/force-sync');
+        const result = await response.json();
+        
+        alert(`✅ ${result.message}`);
+        await updateKBFileStatus();
+        
+    } catch (error) {
+        console.error('Error forcing KB sync:', error);
+        alert('❌ Error synchronizing knowledge base');
+    }
+}
+// Keyboard shortcuts
+document.addEventListener('keydown', function(event) {
+    // Escape key to close modal
+    if (event.key === 'Escape') {
+        closeModal();
+    }
+    
+    // Ctrl+R to refresh incidents
+    if (event.ctrlKey && event.key === 'r') {
+        event.preventDefault();
+        loadIncidents();
+    }
+});

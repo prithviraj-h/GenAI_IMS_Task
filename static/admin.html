@@ -1,4 +1,4 @@
-<!--#admin.html-->
+<!-- admin.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,52 +6,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Incident Management</title>
     <link rel="stylesheet" href="/static/admin-style.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 </head>
 <body>
+    <div class="background-overlay"></div>
     <div class="admin-container">
         <div class="header">
-            <h1>🔧 Admin Panel - Incident Management</h1>
+            <!-- Add this to your header actions in admin.html -->
             <div class="header-actions">
-                <button class="btn-refresh" onclick="loadIncidents()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <polyline points="1 20 1 14 7 14"></polyline>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                    Refresh
-                </button>
-                <button class="btn-refresh" onclick="viewChromaEntries()" style="margin-left: 10px;">
-                    📚 View KB Entries
-                </button>
+                <div class="action-group">
+                    <button class="btn-refresh" onclick="loadIncidents()">
+                        <i class='bx bx-refresh'></i> Refresh
+                    </button>
+                    <button class="btn-kb-management" onclick="viewChromaEntries()">
+                        <i class='bx bx-book-alt'></i> Knowledge Base
+                    </button>
+                    <button class="btn-sync" onclick="forceSyncKB()" title="Sync Database with File">
+                        <i class='bx bx-sync'></i> Sync KB
+                    </button>
+                </div>
             </div>
         </div>
 
         <div class="stats-container">
-            <div class="stat-card">
-                <div class="stat-value" id="totalIncidents">0</div>
-                <div class="stat-label">Total Incidents</div>
+            <div class="stat-card total">
+                <div class="stat-icon">
+                    <i class='bx bx-line-chart'></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalIncidents">0</div>
+                    <div class="stat-label">Total Incidents</div>
+                </div>
             </div>
-            <div class="stat-card stat-pending">
-                <div class="stat-value" id="pendingIncidents">0</div>
-                <div class="stat-label">Pending Info</div>
+            <div class="stat-card pending">
+                <div class="stat-icon">
+                    <i class='bx bx-time-five'></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="pendingIncidents">0</div>
+                    <div class="stat-label">Pending Info</div>
+                </div>
             </div>
-            <div class="stat-card stat-open">
-                <div class="stat-value" id="openIncidents">0</div>
-                <div class="stat-label">Open</div>
+            <div class="stat-card open">
+                <div class="stat-icon">
+                    <i class='bx bx-error-circle'></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="openIncidents">0</div>
+                    <div class="stat-label">Open</div>
+                </div>
             </div>
-            <div class="stat-card stat-approval">
-                <div class="stat-value" id="approvalIncidents">0</div>
-                <div class="stat-label">Need Approval</div>
+            <div class="stat-card approval">
+                <div class="stat-icon">
+                    <i class='bx bx-check-shield'></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="approvalIncidents">0</div>
+                    <div class="stat-label">Need Approval</div>
+                </div>
             </div>
-            <div class="stat-card stat-resolved">
-                <div class="stat-value" id="resolvedIncidents">0</div>
-                <div class="stat-label">Resolved</div>
+            <div class="stat-card resolved">
+                <div class="stat-icon">
+                    <i class='bx bx-check-double'></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="resolvedIncidents">0</div>
+                    <div class="stat-label">Resolved</div>
+                </div>
             </div>
         </div>
 
         <div class="filters-container">
             <label>
-                <span>Filter by Status:</span>
+                <span><i class='bx bx-filter-alt'></i> Filter by Status:</span>
                 <select id="statusFilter" onchange="filterIncidents()">
                     <option value="">All Incidents</option>
                     <option value="pending_info">Pending Info</option>
@@ -61,14 +88,14 @@
             </label>
             <label>
                 <input type="checkbox" id="approvalFilter" onchange="filterIncidents()">
-                <span>Show Only Needs KB Approval</span>
+                <span><i class='bx bx-check-shield'></i> Show Only Needs KB Approval</span>
             </label>
         </div>
 
         <div class="incidents-container">
-            <h2>Incidents</h2>
+            <h2><i class='bx bx-list-ul'></i> Active Incidents</h2>
             <div id="incidentsList" class="incidents-list">
-                <p class="loading">Loading incidents...</p>
+                <p class="loading"><i class='bx bx-loader-circle bx-spin'></i> Loading security incidents...</p>
             </div>
         </div>
     </div>
@@ -84,4 +111,3 @@
     <script src="/static/admin-script.js"></script>
 </body>
 </html>
-

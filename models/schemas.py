@@ -2,7 +2,13 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import pytz
 
+# Add this function at the top of your files
+def get_ist_time():
+    """Get current time in India Standard Time (IST)"""
+    ist = pytz.timezone('Asia/Kolkata')
+    return datetime.now(ist)
 
 class UserQuery(BaseModel):
     user_input: str
@@ -44,8 +50,8 @@ class IncidentCreate(BaseModel):
     conversation_history: List[Dict[str, str]] = Field(default_factory=list)
     is_new_kb_entry: bool = False
     needs_kb_approval: bool = False
-    created_on: datetime = Field(default_factory=datetime.utcnow)
-    updated_on: datetime = Field(default_factory=datetime.utcnow)
+    created_on: datetime = Field(default_factory=get_ist_time)
+    updated_on: datetime = Field(default_factory=get_ist_time)
 
 
 class IncidentUpdate(BaseModel):

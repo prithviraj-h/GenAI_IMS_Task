@@ -1,4 +1,4 @@
-# backend/services/incident_service.py - Enhanced version
+# backend/services/incident_service.py - COMPLETE CORRECTED VERSION
 from db.mongo import mongo_client
 from services.kb_service import kb_service
 from services.llm_service import llm_service
@@ -544,7 +544,6 @@ class IncidentService:
                 ]
             }
 
-# Add this new method to handle incident ID selection after KEEP
     def _handle_incident_selection(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle incident ID selection after user chose KEEP"""
         
@@ -652,7 +651,6 @@ class IncidentService:
                 'incident_id': selected_incident_id,
                 'status': incident.get('status')
             }
-
         
     def _handle_new_incident(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle creating a new incident"""
@@ -973,9 +971,6 @@ class IncidentService:
         """Get incident by ID"""
         return mongo_client.get_incident_by_id(incident_id)
     
-    # In backend/services/incident_service.py - Update this method
-    # backend/services/incident_service.py - Update get_all_incidents method
-
     def get_all_incidents(self) -> List[Dict[str, Any]]:
         """Get all incidents sorted by creation date (newest first)"""
         incidents = mongo_client.get_all_incidents()
@@ -1045,6 +1040,34 @@ class IncidentService:
             return mongo_client.update_incident(incident_id, update_data)
         except Exception as e:
             logger.error(f"Error resolving incident: {e}")
+            return False
+    
+    # ✅ ADD MISSING METHOD: update_incident_status
+    def update_incident_status(self, incident_id: str, status: str) -> bool:
+        """Update incident status (resolve, reopen, etc.)"""
+        try:
+            valid_statuses = ['pending_info', 'open', 'resolved', 'closed']
+            if status not in valid_statuses:
+                logger.error(f"Invalid status: {status}. Valid statuses: {valid_statuses}")
+                return False
+            
+            update_data = {'status': status}
+            
+            # Add timestamp for resolved/closed status
+            if status in ['resolved', 'closed']:
+                update_data[f'{status}_on'] = datetime.utcnow()
+            
+            success = mongo_client.update_incident(incident_id, update_data)
+            
+            if success:
+                logger.info(f"Successfully updated incident {incident_id} status to {status}")
+            else:
+                logger.error(f"Failed to update incident {incident_id} status")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error updating incident status: {e}")
             return False
     
     def add_incident_to_kb(self, incident_id: str, use_case: str, required_info: list, solution_steps: list) -> bool:
@@ -1144,8 +1167,7 @@ class IncidentService:
         except Exception as e:
             logger.error(f"Error approving KB and adding solution: {e}")
             return False
-    # backend/services/incident_service.py - Add this method to the IncidentService class
-
+    
     def approve_kb_entry(self, incident_id: str, solution_steps: str) -> bool:
         """
         Approve KB entry and add solution steps
@@ -1165,24 +1187,6 @@ class IncidentService:
     
     def _handle_ask_incident_type(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle when user says 'create incident' without describing the problem"""
-        response = "I'd be happy to help you create an incident. Could you please describe the technical issue you're experiencing? For example:\n\n" \
-                "- Is it related to email (Outlook)?\n" \
-                "- Network connectivity (VPN, WiFi)?\n" \
-                "- Software installation?\n" \
-                "- Password reset?\n" \
-                "- System performance?\n\n" \
-                "Please tell me what problem you're facing."
-        
-        self.update_session_context(session_id, user_input, response)
-        
-        return {
-            'message': response,
-            'session_id': session_id,
-            'incident_id': None,
-            'status': 'awaiting_issue_description'
-        }
-    def _handle_ask_incident_type(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
-        """Handle when user says 'create incident' without describing the problem"""
         response = llm_service.generate_ask_incident_type_response()
         self.update_session_context(session_id, user_input, response)
         
@@ -1199,7 +1203,6 @@ class IncidentService:
         keywords = ['previous', 'last', 'earlier', 'before', 'my incident', 'solution', 'what happened', 'status']
         user_lower = user_input.lower()
         return any(keyword in user_lower for keyword in keywords)
-
 
     # ✅ NEW METHOD: Handle previous solution queries
     def _handle_previous_solution_query(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:

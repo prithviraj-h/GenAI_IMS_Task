@@ -1,6 +1,6 @@
 # Knowledge Base Entries
-# Last Updated: 2025-10-22 18:45:36
-# Total Entries: 10
+# Last Updated: 2025-10-23 12:33:24
+# Total Entries: 6
 
 
 ==================================================
@@ -114,113 +114,30 @@ Solution Steps:
   - Escalate to hardware team if issue persists after optimization.
 --------------------------------------------------
 
+
 ==================================================
-[KB_ID: 7]
+[KB_ID: KB_7]
 
 Use Case: printer is not working
 
 Required Info:
 - Printer model
-- Error messages (if any)
+- Error message (if any)
 - Operating system
-- Connection type (USB
-- Network)
-- Whether other users are experiencing the same issue
+- Network connection type (wired/wireless)
+- Is the printer shared or local?
 
 Solution Steps:
-Check ink or toner levels — replace if low or empty.
+Check and replace empty or dried-up ink/toner cartridges.
 
-Run print head or drum cleaning from printer settings.
+Ensure ink/toner cartridges are properly installed.
 
-Reinstall or update printer driver from the manufacturer’s website.
+Clean the print heads using printer utility software.
 
-Check paper size and type settings in the printer driver.
+Verify printer settings (correct paper type and quality).
 
-Run the Windows Printer Troubleshooter (Settings → System → Troubleshoot).
+Update or reinstall printer drivers.
 
-Remove and reseat cartridges/toner properly.
+Try printing from a different application or document.
 
-If still blank, the print head may be clogged or damaged — contact service support.
---------------------------------------------------
-
-==================================================
-[KB_ID: 8]
-
-Use Case: redhat is not installing properly
-
-Required Info:
-- Error messages
-- Installation steps followed
-- Operating system version
-- Red Hat version
-
-Solution Steps:
-Use a newer version — Red Hat 3.1 is outdated and may not work on modern systems; try RHEL 8/9, AlmaLinux, or Rocky Linux.
-
-Re-download the ISO — your installation file may be corrupted.
-
-Recreate bootable USB using Rufus with these settings:
-
-Partition scheme: MBR
-
-Target system: BIOS (not UEFI)
-
-File system: FAT32
-
-Enable Legacy Boot and disable Secure Boot in BIOS/UEFI.
-
-Set the hard drive with Red Hat as the first boot device.
-
-If GRUB error occurs, boot into rescue mode and run:
---------------------------------------------------
-
-==================================================
-[KB_ID: 20251016193957]
-
-Use Case: passwor reset
-
-Solution Steps:
-Go to the login page and click “Forgot Password?”
-
-Enter your registered email or username and submit.
-
-Check your email for the password reset link.
-
-Click the link and create a new, strong password.
-
-Confirm the password and save the changes.
-
-Sign in with your new password.
-
-If you didn’t request it, ignore the email and secure your account.
---------------------------------------------------
-
-==================================================
-[KB_ID: 9]
-
-Use Case: curry split on my laptop
-
-Required Info:
-- Laptop model
-- Extent of the spill
-- Whether the laptop is still powered on
-
-Solution Steps:
-Power off laptop immediately.
-
-Unplug charger and remove battery (if possible).
-
-Disconnect all accessories and peripherals.
-
-Wipe off visible curry and moisture gently.
-
-Turn laptop upside down (tent position) to drain.
-
-Let it dry completely for 24–48 hours.
-
-Clean residue carefully with a damp cloth and isopropyl alcohol.
-
-Do not power on until fully dry.
-
-Take laptop to a professional for internal cleaning.
 --------------------------------------------------

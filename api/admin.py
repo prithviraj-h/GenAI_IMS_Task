@@ -7,7 +7,9 @@ from models.schemas import KBApprovalRequest
 from typing import Optional, List, Dict, Any
 import logging
 import os
-from datetime import datetime  # Add this import
+from datetime import datetime
+import json
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -33,8 +35,6 @@ async def get_stats():
         logger.error(f"Error getting stats: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-
-# backend/api/admin.py - Update get_incidents method
 
 @router.get("/incidents")
 async def get_incidents(
@@ -74,6 +74,7 @@ async def get_incidents(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str):
@@ -162,6 +163,7 @@ async def get_chroma_entries():
         logger.error(f"Error getting ChromaDB entries: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 @router.delete("/incidents/{incident_id}")
 async def delete_incident(incident_id: str):
     """Delete an incident (admin only)"""
@@ -176,7 +178,8 @@ async def delete_incident(incident_id: str):
     except Exception as e:
         logger.error(f"Error deleting incident: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-    
+
+
 @router.get("/chroma/entries-with-embeddings")
 async def get_chroma_entries_with_embeddings():
     """Get all ChromaDB entries WITH embeddings/vectors"""
@@ -205,8 +208,8 @@ async def get_chroma_entries_with_embeddings():
     except Exception as e:
         logger.error(f"Error getting ChromaDB entries with embeddings: {e}")
         return {"error": str(e)}
-    
-# Add to backend/api/admin.py
+
+
 @router.get("/debug/kb-file-status")
 async def debug_kb_file_status():
     """Check KB file status and location"""
@@ -253,7 +256,7 @@ async def debug_kb_file_status():
     except Exception as e:
         return {"error": str(e)}
 
-# Add to backend/api/admin.py
+
 @router.get("/kb/current-file")
 async def get_current_kb_file():
     """Get the current content of the KB file that the app is using"""
@@ -274,12 +277,14 @@ async def get_current_kb_file():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
 @router.get("/kb/force-update-file-get")
 async def force_update_kb_file_get():
     """GET endpoint to force update kb_data.txt file (for testing)"""
     return await force_update_kb_file()  
- 
-# Add to backend/api/admin.py
+
+
 @router.post("/kb/force-update-file")
 async def force_update_kb_file():
     """Force update kb_data.txt file with ALL ChromaDB entries"""
@@ -347,9 +352,8 @@ async def force_update_kb_file():
     except Exception as e:
         logger.error(f"Error force updating KB file: {e}")
         return {"error": str(e)}
-    
 
-# Add to backend/api/admin.py
+
 @router.get("/kb/file-monitor")
 async def monitor_kb_file():
     """Monitor KB file for changes"""
@@ -377,8 +381,8 @@ async def monitor_kb_file():
         }
     except Exception as e:
         return {"error": str(e)}
-    
-# Add to backend/api/admin.py
+
+
 @router.get("/debug/kb-append-status")
 async def debug_kb_append_status():
     """Check if append_to_kb_file is being called"""
@@ -403,16 +407,196 @@ async def debug_kb_append_status():
         }
     except Exception as e:
         return {"error": str(e)}
-    
+
+
 @router.delete("/chroma/entries/{kb_id}")
 async def delete_chroma_entry(kb_id: str):
-    """Delete a KB entry from ChromaDB"""
+    """Delete a KB entry from ChromaDB and synchronize with text file"""
     try:
+        # 1. First delete from ChromaDB
         success = chroma_client.delete_entry(kb_id)
-        if success:
-            return {"message": f"KB entry {kb_id} deleted successfully"}
-        else:
-            raise HTTPException(status_code=400, detail="Failed to delete KB entry")
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Failed to delete KB entry from ChromaDB")
+        
+        # 2. Synchronize with kb_data.txt file
+        sync_result = await sync_kb_file_with_chroma()
+        
+        return {
+            "message": f"KB entry {kb_id} deleted successfully and file synchronized",
+            "sync_result": sync_result
+        }
+        
     except Exception as e:
         logger.error(f"Error deleting ChromaDB entry: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def sync_kb_file_with_chroma():
+    """Sync the kb_data.txt file with current ChromaDB state"""
+    try:
+        # Get all entries from ChromaDB
+        chroma_entries = chroma_client.get_all_entries()
+        
+        # Create header
+        file_content = "# Knowledge Base Entries\n"
+        file_content += f"# Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        file_content += f"# Total Entries: {len(chroma_entries)}\n\n"
+        
+        for entry in chroma_entries:
+            metadata = entry.get('metadata', {})
+            kb_id = entry.get('id', '')
+            
+            # Extract KB number
+            if kb_id.startswith('KB_'):
+                kb_number = kb_id.split('_')[1]
+            else:
+                kb_number = kb_id[2:] if kb_id.startswith('KB') else kb_id
+            
+            file_content += f"\n{'='*50}\n"
+            file_content += f"[KB_ID: {kb_number}]\n\n"
+            file_content += f"Use Case: {metadata.get('use_case', 'Unknown')}\n\n"
+            
+            required_info = metadata.get('required_info', '')
+            if required_info:
+                file_content += "Required Info:\n"
+                for info in required_info.split(','):
+                    file_content += f"- {info.strip()}\n"
+                file_content += "\n"
+            
+            solution_steps = metadata.get('solution_steps', '')
+            if solution_steps:
+                file_content += "Solution Steps:\n"
+                # Format solution steps properly
+                if '\n' in solution_steps:
+                    file_content += f"{solution_steps}\n"
+                else:
+                    file_content += f"- {solution_steps}\n"
+            
+            file_content += f"{'-'*50}\n"
+        
+        # Write to file
+        kb_file_path = kb_service.kb_file_path
+        os.makedirs(os.path.dirname(kb_file_path), exist_ok=True)
+        
+        with open(kb_file_path, 'w', encoding='utf-8') as f:
+            f.write(file_content)
+        
+        # Verify the write
+        with open(kb_file_path, 'r', encoding='utf-8') as f:
+            written_content = f.read()
+        
+        return {
+            "message": "KB file synchronized successfully",
+            "file_path": kb_file_path,
+            "entries_count": len(chroma_entries),
+            "file_size": len(written_content),
+            "line_count": len(written_content.splitlines())
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing KB file: {e}")
+        return {"error": str(e)}
+
+
+@router.get("/kb/force-sync")
+async def force_sync_kb():
+    """Force synchronization between ChromaDB and kb_data.txt"""
+    try:
+        result = await sync_kb_file_with_chroma()
+        return result
+    except Exception as e:
+        logger.error(f"Error forcing KB sync: {e}")
+        return {"error": str(e)}
+
+
+@router.get("/debug/kb-sync-status")
+async def debug_kb_sync_status():
+    """Debug endpoint to check sync status between ChromaDB and file"""
+    try:
+        # Check ChromaDB
+        chroma_entries = chroma_client.get_all_entries()
+        chroma_count = len(chroma_entries)
+        
+        # Check file
+        kb_file_path = kb_service.kb_file_path
+        file_exists = os.path.exists(kb_file_path)
+        file_count = 0
+        
+        if file_exists:
+            with open(kb_file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                file_count = content.count("KB_ID:")
+        
+        # Get ChromaDB IDs for comparison
+        chroma_ids = [entry.get('id', '') for entry in chroma_entries]
+        
+        # Get file IDs for comparison
+        file_ids = []
+        if file_exists:
+            with open(kb_file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                for line in lines:
+                    if line.strip().startswith('[KB_ID:'):
+                        # Extract KB ID from format like [KB_ID: 001]
+                        kb_id_part = line.strip()[7:-1]  # Remove '[KB_ID:' and ']'
+                        file_ids.append(f"KB_{kb_id_part.strip()}")
+        
+        # Check if IDs match
+        ids_match = set(chroma_ids) == set(file_ids)
+        
+        return {
+            "chroma_db_entries": chroma_count,
+            "file_entries": file_count,
+            "in_sync": chroma_count == file_count and ids_match,
+            "file_exists": file_exists,
+            "file_size": os.path.getsize(kb_file_path) if file_exists else 0,
+            "chroma_ids": chroma_ids,
+            "file_ids": file_ids,
+            "ids_match": ids_match,
+            "missing_in_file": list(set(chroma_ids) - set(file_ids)),
+            "missing_in_chroma": list(set(file_ids) - set(chroma_ids))
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking sync status: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/kb/add-entry")
+async def add_kb_entry(entry_data: Dict[str, Any]):
+    """Add a new KB entry to both ChromaDB and text file"""
+    try:
+        kb_id = entry_data.get('kb_id')
+        use_case = entry_data.get('use_case')
+        required_info = entry_data.get('required_info', '')
+        solution_steps = entry_data.get('solution_steps', '')
+        questions = entry_data.get('questions', '')
+        
+        if not kb_id or not use_case:
+            raise HTTPException(status_code=400, detail="KB ID and use case are required")
+        
+        # Add to ChromaDB
+        chroma_success = chroma_client.add_entry(
+            kb_id=kb_id,
+            use_case=use_case,
+            required_info=required_info,
+            solution_steps=solution_steps,
+            questions=questions
+        )
+        
+        if not chroma_success:
+            raise HTTPException(status_code=400, detail="Failed to add entry to ChromaDB")
+        
+        # Synchronize with text file
+        sync_result = await sync_kb_file_with_chroma()
+        
+        return {
+            "message": "KB entry added successfully and file synchronized",
+            "kb_id": kb_id,
+            "sync_result": sync_result
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding KB entry: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
