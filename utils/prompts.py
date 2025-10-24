@@ -34,31 +34,50 @@ Current Context:
 - Session ID: {session_id}
 - Is right after greeting: {is_after_greeting}
 
+CRITICAL RULES FOR INTENT DETECTION:
+
+1. **CONTINUE_INCIDENT takes priority** when has_active_incident is TRUE and user provides:
+   - Single word answers (e.g., "windows", "cisco", "office365")
+   - Short phrases (e.g., "i am using windows", "office 365")
+   - Email addresses
+   - Error messages or "no error"
+   - ANY response that could be answering a technical question
+   
+2. **UNRELATED_QUERY** should ONLY be used when user asks completely off-topic questions like:
+   - Weather, jokes, general knowledge
+   - Greetings (use GREETING_CONTEXT instead)
+   - Topics clearly unrelated to IT support
+   
+3. **If in doubt with active incident, choose CONTINUE_INCIDENT over UNRELATED_QUERY**
+
 Detect the following intents:
 1. GREETING - User is greeting (hi, hello, hey, good morning, etc.) with NO active incident
 2. GREETING_CONTEXT - User is greeting while there's an active incident
 3. TRACK_INCIDENT - User wants to check status of existing incident
-4. ASK_INCIDENT_TYPE - User said "create incident" or "new incident" right after greeting WITHOUT describing actual problem
+4. ASK_INCIDENT_TYPE - User said ONLY "create incident" or "new incident" WITHOUT describing actual problem
 5. NEW_INCIDENT - User is describing an actual technical problem (e.g., "outlook not working", "VPN down", "can't install python")
 6. CLOSE_INCIDENT - User wants to close/finish current incident
 7. CLEAR_SESSION - User wants to clear session/start fresh (exit, clear, end session, start, restart, etc.)
-8. CONTINUE_INCIDENT - User is providing information for current incident
+8. CONTINUE_INCIDENT - User is providing information for current incident (PRIORITY when has_active_incident is TRUE)
 9. GENERAL_QUERY - General question or conversation with NO active incident
-10. UNRELATED_QUERY - User asks unrelated question while there's an active incident
+10. UNRELATED_QUERY - User asks completely off-topic question while there's an active incident (weather, jokes, etc.)
 11. PROVIDE_INCIDENT_ID - User is providing an incident ID for tracking
-12. ASK_PREVIOUS_SOLUTION - User wants to view previous solution or continue previous incident
-
-CRITICAL RULES:
-- If has_active_incident is TRUE and user greets, use GREETING_CONTEXT
-- If has_active_incident is TRUE and user asks completely unrelated question, use UNRELATED_QUERY
-- If is_after_greeting is TRUE and user says "create incident" WITHOUT describing technical problem, use ASK_INCIDENT_TYPE
-- If user asks about previous incidents/solutions without specific ID, use ASK_PREVIOUS_SOLUTION
+12. ASK_INCOMPLETE_INCIDENT - User wants to view/continue an incomplete incident
+13. ASK_PREVIOUS_SOLUTION - User wants to view previous solution or continue previous incident
 
 Examples:
+- "hi" with NO active incident → GREETING
 - "hi" with active incident → GREETING_CONTEXT
 - "what's the weather?" with active incident → UNRELATED_QUERY
-- "create a incident" after greeting → ASK_INCIDENT_TYPE
+- "windows" with active incident → CONTINUE_INCIDENT (answering OS question)
+- "office365" with active incident → CONTINUE_INCIDENT (answering account type)
+- "i am using windows" with active incident → CONTINUE_INCIDENT
+- "no error" with active incident → CONTINUE_INCIDENT
+- "bhavanism@gmail.com" with active incident → CONTINUE_INCIDENT
+- "create a incident" after greeting with NO issue → ASK_INCIDENT_TYPE
+- "create a incident for outlook not working" → NEW_INCIDENT
 - "view my previous solution" → ASK_PREVIOUS_SOLUTION
+- "view incomplete incident" → ASK_INCOMPLETE_INCIDENT
 
 Respond in JSON format:
 {{

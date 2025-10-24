@@ -5,6 +5,8 @@ from typing import Dict, List, Any, Optional
 import logging
 import json
 import re
+from utils.prompts import INTENT_DETECTION_PROMPT
+        
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,7 @@ class LLMService:
     def detect_intent(self, user_input: str, conversation_history: List[Dict], 
                      has_active_incident: bool, session_id: str) -> Dict[str, Any]:
         """Detect user intent using LLM with improved context awareness"""
-        from utils.prompts import INTENT_DETECTION_PROMPT
-        
+
         conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-10:]])
         
         # Check if this is right after a greeting
@@ -337,45 +338,38 @@ class LLMService:
             return {"is_new_incident": True, "clarification_message": "Which incident would you like to discuss?"}
     
     def extract_info_from_response(self, user_input: str, question: str, required_field: str = "") -> Dict[str, Any]:
-        """Extract structured information from user's response"""
-        prompt = f"""You are analyzing a user's response to determine if they answered the question properly.
-
-Question that was asked: {question}
-User's response: {user_input}
-Information being collected: {required_field}
-
-Analyze the response and determine:
-1. Does the response directly answer the question? (yes/no)
-2. What specific information did the user provide?
-3. Is it a relevant and complete answer to what was asked?
-
-Guidelines:
-- If the user gives specific technical details (OS name, error codes, software names, etc.), that's relevant
-- If the user says things like "no", "yes", "nothing", "I don't know", that can be valid depending on the question
-- If the user goes off-topic or provides unrelated information, that's not relevant
-
-Respond in JSON format:
-{{
-    "answers_question": true/false,
-    "extracted_info": "the specific information provided",
-    "is_relevant": true/false,
-    "reasoning": "brief explanation"
-}}"""
+        """Extract structured information from user's response - FALLBACK ONLY"""
+        # This is now only used as a fallback if direct pattern matching fails
         
-        response = self.generate_response(prompt, temperature=0.3)
+        # Simple heuristic approach
+        user_lower = user_input.lower().strip()
         
-        try:
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start != -1 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                parsed = json.loads(json_str)
-                logger.info(f"Extracted info: {parsed}")
-                return parsed
-            return {"answers_question": True, "extracted_info": user_input, "is_relevant": True}
-        except Exception as e:
-            logger.error(f"Error extracting info: {e}")
-            return {"answers_question": True, "extracted_info": user_input, "is_relevant": True}
+        # Check for very short answers (1-5 words) - usually valid
+        word_count = len(user_input.split())
+        if word_count <= 5 and len(user_input) > 1:
+            return {
+                "answers_question": True,
+                "extracted_info": user_input.strip(),
+                "is_relevant": True,
+                "reasoning": "Short specific answer"
+            }
+        
+        # Check for negative responses
+        if any(word in user_lower for word in ['no error', 'none', 'nothing', "don't see", 'not seeing']):
+            return {
+                "answers_question": True,
+                "extracted_info": user_input.strip(),
+                "is_relevant": True,
+                "reasoning": "Negative/none response"
+            }
+        
+        # Default to accepting the response
+        return {
+            "answers_question": True,
+            "extracted_info": user_input.strip(),
+            "is_relevant": True,
+            "reasoning": "Accepted as answer"
+        }
 
 # Global LLM service instance
 llm_service = LLMService()
