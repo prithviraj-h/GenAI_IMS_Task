@@ -14,15 +14,14 @@ typing-extensions==4.12.2
 google-generativeai==0.3.1
 chromadb==0.4.24
 
-# ---- Optional: If you use sentence transformers or embeddings ----
+# ---- Embeddings ----
 sentence-transformers==2.7.0
 
-# ---- Optional: For background operations ----
+# ---- Async helpers ----
 anyio==3.7.1
 
 # ---- Validation ----
 pydantic==2.9.2
 pydantic-core==2.23.4
-
-# ---- ASGI middleware ----
-starlette==0.37.2
+pydantic-settings==2.1.0
+python-multipart==0.0.6
