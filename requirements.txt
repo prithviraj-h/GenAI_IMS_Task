@@ -1,6 +1,6 @@
 # ---- Core Framework ----
 fastapi==0.115.5
-uvicorn[standard]==0.30.6
+uvicorn==0.30.6
 
 # ---- Database & ORM ----
 pymongo==4.10.1
@@ -12,15 +12,11 @@ python-dotenv==1.0.1
 google-generativeai==0.3.1
 chromadb==0.4.24
 
-# ---- Embeddings (CHOOSE ONE OPTION BELOW) ----
+# ---- Critical: Pin numpy for ChromaDB compatibility ----
+numpy<2.0.0,>=1.22.0
 
-# Option 1: Use Gemini API for embeddings (RECOMMENDED - smallest size)
-# No additional package needed, use google-generativeai
-
-# Option 2: Lightweight embedding model (adds ~150MB)
-# sentence-transformers==2.7.0
-# --extra-index-url https://download.pytorch.org/whl/cpu
-# torch==2.1.0+cpu
+# ---- Embeddings ----
+sentence-transformers==2.7.0
 
 # ---- Validation ----
 pydantic==2.9.2
