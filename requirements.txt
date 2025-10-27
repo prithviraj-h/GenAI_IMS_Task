@@ -2,7 +2,7 @@
 fastapi==0.115.5
 uvicorn==0.30.6
 
-# ---- Data & ORM ----
+# ---- Database & ORM ----
 SQLAlchemy==2.0.43
 psycopg2-binary==2.9.9
 
@@ -14,7 +14,6 @@ typing-extensions==4.12.2
 google-generativeai==0.3.1
 chromadb==0.4.24
 numpy<2.0.0
-
 
 # ---- Embeddings ----
 sentence-transformers==2.7.0
@@ -28,4 +27,9 @@ pydantic-core==2.23.4
 pydantic-settings==2.1.0
 python-multipart==0.0.6
 
+# ---- Mongo / Optional ----
 pymongo==4.10.1
+
+# ---- Optional for Render stability ----
+starlette==0.37.2
+requests==2.32.3
