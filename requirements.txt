@@ -30,6 +30,5 @@ python-multipart==0.0.6
 # ---- Mongo / Optional ----
 pymongo==4.10.1
 
-# ---- Optional for Render stability ----
-starlette==0.37.2
+# ---- Optional for stability ----
 requests==2.32.3
