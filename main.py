@@ -1,4 +1,3 @@
-# backend/main.py
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -6,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 import logging
+import gc  # ADD THIS
+import psutil  # ADD THIS
 
 from core.config import settings
 from db.mongo import mongo_client
@@ -13,6 +14,11 @@ from db.chroma import chroma_client
 from services.kb_service import kb_service
 from api import chat, admin
 from api.incidents import router as incident_router
+
+# ---------------- Memory Optimization ----------------
+# ADD THESE LINES FOR RENDER COMPATIBILITY
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:False"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # ---------------- Logging ----------------
 logging.basicConfig(
@@ -32,6 +38,9 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting application...")
 
     try:
+        # ADD: Force garbage collection before starting services
+        gc.collect()
+        
         # Connect to MongoDB
         mongo_client.connect()
         logger.info("✅ MongoDB connected")
@@ -112,6 +121,24 @@ async def admin_page():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": settings.PROJECT_VERSION}
+
+
+# ADD: Memory monitoring endpoint for debugging
+@app.get("/api/memory-status")
+async def memory_status():
+    """Monitor memory usage (for debugging)"""
+    try:
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        return {
+            "rss_mb": round(memory_info.rss / 1024 / 1024, 2),
+            "vms_mb": round(memory_info.vms / 1024 / 1024, 2),
+            "available_memory_mb": round(psutil.virtual_memory().available / 1024 / 1024, 2),
+            "memory_percent": round(psutil.virtual_memory().percent, 2),
+            "optimized": True
+        }
+    except Exception as e:
+        return {"error": str(e), "optimized": True}
 
 
 # For local run only

@@ -1,27 +1,21 @@
 # ---- Core Framework ----
 fastapi==0.115.5
 uvicorn==0.30.6
-
 # ---- Database & ORM ----
 pymongo==4.10.1
-
 # ---- Environment & Utils ----
 python-dotenv==1.0.1
-
 # ---- AI / LLM ----
 google-generativeai==0.3.1
 chromadb==0.4.24
-
 # ---- Critical: Pin numpy for ChromaDB compatibility ----
 numpy<2.0.0,>=1.22.0
-
 # ---- Embeddings ----
 sentence-transformers==2.7.0
-
 # ---- Validation ----
 pydantic==2.9.2
 pydantic-settings==2.1.0
 python-multipart==0.0.6
-
 # ---- Optional ----
 requests==2.32.3
+psutil==5.9.8  # ADD THIS FOR MEMORY MONITORING

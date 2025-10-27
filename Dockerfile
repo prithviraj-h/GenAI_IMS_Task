@@ -1,29 +1,42 @@
 # ---------- Stage 1: Builder ----------
     FROM python:3.12-slim AS builder
+
     WORKDIR /app
     
-    # Install build dependencies for ChromaDB (needs g++ for chroma-hnswlib)
+    # Install minimal build dependencies
     RUN apt-get update && \
         apt-get install -y --no-install-recommends \
         gcc \
         g++ \
-        && rm -rf /var/lib/apt/lists/*
+        && rm -rf /var/lib/apt/lists/* \
+        && apt-get clean
     
     COPY requirements.txt .
+    
+    # Install with no cache and minimal disk usage
     RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
     
-    # Clean up test files and cache (SAFE - doesn't affect functionality)
-    RUN find /install -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-        find /install -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    # Clean up build dependencies to save space
+    RUN apt-get remove -y gcc g++ && apt-get autoremove -y
+    
+    # Clean up Python cache
+    RUN find /install -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
         find /install -name "*.pyc" -delete
     
     # ---------- Stage 2: Runtime ----------
     FROM python:3.12-slim
+    
     WORKDIR /app
+    
+    # Install only essential runtime dependencies
+    RUN apt-get update && \
+        apt-get install -y --no-install-recommends \
+        && rm -rf /var/lib/apt/lists/* \
+        && apt-get clean
     
     COPY --from=builder /install /usr/local
     
-    # Copy your application
+    # Copy your application (keep all your existing code)
     COPY api ./api
     COPY core ./core
     COPY db ./db
@@ -39,4 +52,6 @@
         PORT=8000
     
     EXPOSE 8000
-    CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    
+    # Single worker to save memory
+    CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
