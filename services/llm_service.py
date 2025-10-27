@@ -34,76 +34,82 @@ class LLMService:
             logger.error(f"Error generating LLM response: {e}")
             return "I apologize, but I'm having trouble processing your request. Please try again."
     
-    def detect_intent(self, user_input: str, conversation_history: List[Dict], 
-                     has_active_incident: bool, session_id: str) -> Dict[str, Any]:
-        """Detect user intent using LLM with improved context awareness"""
+    # In backend/services/llm_service.py - Update the intent detection
 
-        conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-10:]])
-        
-        # Check if this is right after a greeting
-        is_after_greeting = False
-        if len(conversation_history) >= 2:
-            last_bot_msg = conversation_history[-1].get('content', '').lower() if conversation_history[-1].get('role') == 'assistant' else ''
-            if 'track' in last_bot_msg and 'create' in last_bot_msg and 'how may i help' in last_bot_msg:
-                is_after_greeting = True
-        
-        # Check for context-aware patterns
-        user_lower = user_input.lower().strip()
-        
-        # If there's an active incident and user seems to be changing topic
-        if has_active_incident:
-            # Check if this is related to current incident context
-            current_context_keywords = self._extract_context_keywords(conversation_history)
-            is_related = self._is_related_to_context(user_input, current_context_keywords)
-            
-            if not is_related:
-                # Check if it's a greeting
-                if any(word in user_lower for word in ['hi', 'hello', 'hey', 'good morning', 'good afternoon']):
-                    return {
-                        "intent": "GREETING_CONTEXT",
-                        "confidence": 0.9,
-                        "reasoning": "User greeted while having active incident"
-                    }
-                # Check if it's completely unrelated
-                elif not self._is_technical_query(user_input):
-                    return {
-                        "intent": "UNRELATED_QUERY",
-                        "confidence": 0.8,
-                        "reasoning": "User asked unrelated question during active incident"
-                    }
-        
-        # Check for previous solution intent
-        if self._is_asking_about_previous_solution(user_input):
-            return {
-                "intent": "ASK_PREVIOUS_SOLUTION",
-                "confidence": 0.85,
-                "reasoning": "User is asking about previous incidents or solutions"
-            }
-        
-        prompt = INTENT_DETECTION_PROMPT.format(
-            user_input=user_input,
-            conversation_history=conv_text,
-            has_active_incident=has_active_incident,
-            session_id=session_id,
-            is_after_greeting=is_after_greeting
-        )
-        
-        response = self.generate_response(prompt, temperature=0.3)
+    # In backend/services/llm_service.py - Update detect_intent method
+
+    def detect_intent(self, user_input: str, conversation_history: List[Dict],
+                    has_active_incident: bool, session_id: str) -> Dict[str, Any]:
+        """Detect user intent using LLM with improved context awareness"""
         
         try:
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start != -1 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                intent_data = json.loads(json_str)
-                logger.info(f"Detected intent: {intent_data}")
-                return intent_data
+            # Check for new issue descriptions when there's an active incident
+            if has_active_incident:
+                user_lower = user_input.lower().strip()
+                
+                # Clear indicators of new technical issues
+                new_issue_indicators = [
+                    'not opening', 'not working', 'not connecting', 'cannot access',
+                    'failed', 'broken', 'error', 'issue with', 'problem with',
+                    'outlook', 'email', 'vpn', 'network', 'wifi', 'software',
+                    'install', 'password', 'login', 'access', 'connection'
+                ]
+                
+                # If user describes a clear technical issue while having active incident
+                if any(indicator in user_lower for indicator in new_issue_indicators):
+                    # Check if it's different from current context
+                    is_different_issue = True
+                    if conversation_history:
+                        last_bot_msg = conversation_history[-1].get('content', '').lower() if conversation_history[-1].get('role') == 'assistant' else ''
+                        # If last bot message contains similar keywords, might be same issue
+                        common_keywords = set(new_issue_indicators).intersection(set(last_bot_msg.split()))
+                        if len(common_keywords) > 1:
+                            is_different_issue = False
+                    
+                    if is_different_issue:
+                        return {
+                            "intent": "NEW_INCIDENT",
+                            "confidence": 0.85,
+                            "reasoning": "User described a new technical issue while having active incident"
+                        }
+
+            conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-10:]])
+            
+            is_after_greeting = False
+            if len(conversation_history) >= 2:
+                last_bot_msg = conversation_history[-1].get('content', '').lower() if conversation_history[-1].get('role') == 'assistant' else ''
+                if 'track' in last_bot_msg and 'create' in last_bot_msg and 'how may i help' in last_bot_msg:
+                    is_after_greeting = True
+
+            prompt = INTENT_DETECTION_PROMPT.format(
+                user_input=user_input,
+                conversation_history=conv_text,
+                has_active_incident=has_active_incident,
+                session_id=session_id,
+                is_after_greeting=is_after_greeting
+            )
+            
+            response = self.generate_response(prompt, temperature=0.3)
+            
+            try:
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                if json_start != -1 and json_end > json_start:
+                    json_str = response[json_start:json_end]
+                    intent_data = json.loads(json_str)
+                    logger.info(f"Detected intent: {intent_data}")
+                    return intent_data
+            except Exception as e:
+                logger.error(f"Error parsing intent: {e}")
+            
+            # ✅ FIX: Ensure fallback always returns a dict
+            return self._fallback_intent_detection(user_input, has_active_incident)
+            
         except Exception as e:
-            logger.error(f"Error parsing intent: {e}")
-        
-        # Fallback to simple keyword detection
-        return self._fallback_intent_detection(user_input, has_active_incident)
-    
+            logger.error(f"Error in LLM intent detection: {e}")
+            # ✅ FIX: Always return a fallback intent
+            return self._fallback_intent_detection(user_input, has_active_incident)
+        # ... rest of the method remains the same
     def _extract_context_keywords(self, conversation_history: List[Dict]) -> List[str]:
         """Extract keywords from recent conversation for context awareness"""
         recent_text = " ".join([msg['content'] for msg in conversation_history[-4:]])
@@ -192,6 +198,28 @@ class LLMService:
         response = self.generate_response(prompt, temperature=0.7)
         return response
     
+    def generate_incident_selection_message(self, incident_list: str, example_id: str) -> str:
+        """Generate dynamic message for incident selection after KEEP choice"""
+        from utils.prompts import INCIDENT_SELECTION_DYNAMIC_PROMPT
+        
+        prompt = INCIDENT_SELECTION_DYNAMIC_PROMPT.format(
+            incident_list=incident_list,
+            example_id=example_id
+        )
+        
+        response = self.generate_response(prompt, temperature=0.7)
+        return response
+    def generate_incident_selection_retry_message(self, incident_list: str, example_id: str) -> str:
+        """Generate retry message when incident ID not found"""
+        from utils.prompts import INCIDENT_SELECTION_RETRY_PROMPT
+        
+        prompt = INCIDENT_SELECTION_RETRY_PROMPT.format(
+            incident_list=incident_list,
+            example_id=example_id
+        )
+        
+        response = self.generate_response(prompt, temperature=0.7)
+        return response
     def generate_track_incident_response(self, user_input: str, conversation_history: List[Dict]) -> str:
         """Generate response asking for incident ID"""
         from utils.prompts import TRACK_INCIDENT_PROMPT
@@ -236,17 +264,18 @@ class LLMService:
         response = self.generate_response(CLEAR_SESSION_CONFIRMATION_PROMPT, temperature=0.7)
         return response
     
-    def generate_ask_incident_type_response(self) -> str:
-        """Generate response asking what type of incident user wants to create"""
-        return ("I'd be happy to help you create an incident. Could you please describe the technical issue you're experiencing?\n\n"
-                "For example:\n"
-                "- Email problems (Outlook not opening, can't send emails)\n"
-                "- Network issues (VPN not connecting, WiFi problems)\n"
-                "- Software installation requests\n"
-                "- Password reset needed\n"
-                "- System performance issues\n\n"
-                "Please tell me what problem you're facing.")
+    def generate_ask_incident_type_response(self, user_input: str, conversation_history: List[Dict]) -> str:
+        """Generate response asking what type of issue user wants to report"""
+        from utils.prompts import ASK_INCIDENT_TYPE_PROMPT
+        
+        conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-5:]])
+        
+        prompt = ASK_INCIDENT_TYPE_PROMPT.format(
+            user_input=user_input,
+            conversation_history=conv_text
+        )
     
+        return self.generate_response(prompt, temperature=0.7)  
     def analyze_technical_issue(self, user_query: str, conversation_history: List[Dict[str, str]]) -> Dict[str, Any]:
         """Analyze if query is a technical issue and what info is needed"""
         from utils.prompts import NEW_INCIDENT_ANALYSIS_PROMPT
@@ -370,6 +399,100 @@ class LLMService:
             "is_relevant": True,
             "reasoning": "Accepted as answer"
         }
+    def generate_initial_greeting(self, user_input: str, conversation_history: List[Dict]) -> str:
+        """Generate initial greeting message"""
+        from utils.prompts import INITIAL_GREETING_PROMPT
+        
+        conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-5:]])
+        
+        prompt = INITIAL_GREETING_PROMPT.format(
+            user_input=user_input,
+            conversation_history=conv_text
+        )
+        
+        return self.generate_response(prompt, temperature=0.7)
 
+    def generate_greeting_with_context(self, user_input: str, conversation_history: List[Dict], 
+                                    current_incident: Dict, incident_id: str) -> str:
+        """Generate greeting when user has active incident"""
+        from utils.prompts import GREETING_WITH_CONTEXT_PROMPT
+        
+        conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-5:]])
+        
+        incident_conversation = current_incident.get('conversation_history', []) if current_incident else []
+        last_question = ""
+        for msg in reversed(incident_conversation):
+            if msg.get('role') == 'assistant':
+                last_question = msg.get('content', '')
+                break
+        
+        prompt = GREETING_WITH_CONTEXT_PROMPT.format(
+            user_input=user_input,
+            conversation_history=conv_text,
+            incident_id=incident_id,
+            last_question=last_question,
+            has_pending_info=bool(current_incident and current_incident.get('status') == 'pending_info')
+        )
+        
+        return self.generate_response(prompt, temperature=0.7)
+
+    def generate_fresh_session_greeting(self) -> str:
+        """Generate greeting for fresh session after clear"""
+        from utils.prompts import FRESH_SESSION_GREETING_PROMPT
+        
+        return self.generate_response(FRESH_SESSION_GREETING_PROMPT, temperature=0.7)
+
+    def generate_keep_ignore_message(self, new_issue: str, current_issue: str, incident_id: str) -> str:
+        """Generate message asking user to keep or ignore previous incident"""
+        from utils.prompts import KEEP_IGNORE_MESSAGE_PROMPT
+        
+        prompt = KEEP_IGNORE_MESSAGE_PROMPT.format(
+            new_issue=new_issue,
+            current_issue=current_issue,
+            incident_id=incident_id
+        )
+        
+        return self.generate_response(prompt, temperature=0.7)
+
+    def generate_keep_ignore_clarification(self) -> str:
+        """Generate clarification when user doesn't say KEEP or IGNORE clearly"""
+        from utils.prompts import KEEP_IGNORE_CLARIFICATION_PROMPT
+        
+        return self.generate_response(KEEP_IGNORE_CLARIFICATION_PROMPT, temperature=0.7)
+
+    def generate_incident_completion_message(self, incident_id: str) -> str:
+        """Generate message when all information is collected"""
+        from utils.prompts import INCIDENT_COMPLETION_PROMPT
+        
+        prompt = INCIDENT_COMPLETION_PROMPT.format(
+            incident_id=incident_id
+        )
+        
+        return self.generate_response(prompt, temperature=0.7)
+
+    def generate_default_admin_message(self, status: str) -> str:
+        """Generate default admin message for given status"""
+        from utils.prompts import DEFAULT_ADMIN_MESSAGE_PROMPT
+        
+        prompt = DEFAULT_ADMIN_MESSAGE_PROMPT.format(
+            status=status
+        )
+        
+        return self.generate_response(prompt, temperature=0.5)
+    
+    def generate_polite_goodbye(self) -> str:
+        """Generate polite goodbye without closing incidents"""
+        from utils.prompts import POLITE_GOODBYE_PROMPT
+        
+        return self.generate_response(POLITE_GOODBYE_PROMPT, temperature=0.7)
+    def generate_incident_creation_confirmation(self, issue_description: str) -> str:
+        """Generate confirmation message before creating incident"""
+        from utils.prompts import INCIDENT_CREATION_CONFIRMATION_PROMPT
+        
+        prompt = INCIDENT_CREATION_CONFIRMATION_PROMPT.format(
+            issue_description=issue_description
+        )
+        
+        return self.generate_response(prompt, temperature=0.7)
 # Global LLM service instance
 llm_service = LLMService()

@@ -36,58 +36,80 @@ Current Context:
 
 CRITICAL RULES FOR INTENT DETECTION:
 
-1. **CONTINUE_INCIDENT takes priority** when has_active_incident is TRUE and user provides:
+1. **ASK_INCIDENT_TYPE vs NEW_INCIDENT - VERY IMPORTANT:**
+   
+   **ASK_INCIDENT_TYPE** (User wants to create incident but hasn't described the problem):
+   - "I want to create a new incident"
+   - "create a new incident"
+   - "create incident"
+   - "I want to create a new incident for:" (ends with colon, no actual issue)
+   - "I want to create a new incident for my" (incomplete sentence)
+   - "new incident"
+   - "report an issue" (but doesn't say what issue)
+   
+   **NEW_INCIDENT** (User describes an actual technical problem):
+   - "I want to create a new incident for outlook not working"
+   - "create incident for VPN issue"
+   - "outlook is not opening"
+   - "VPN connection failed"
+   - "password reset needed"
+   - "can't access email"
+   
+   **Key difference**: ASK_INCIDENT_TYPE = intent to create but NO problem description
+                       NEW_INCIDENT = actual problem described
+
+2. **If user says "bye", "goodbye", "thanks", "thank you"**:
+   - Classify as GREETING or GENERAL_QUERY
+   - Do NOT close any incidents
+   - Respond politely
+
+3. **CLOSE_INCIDENT** should ONLY be used when user EXPLICITLY says:
+   - "close incident"
+   - "close this incident"
+   - "mark as closed"
+   - "I want to close"
+   - "finish this incident"
+   
+   ❌ DO NOT treat as CLOSE_INCIDENT:
+   - "bye", "goodbye", "thank you", "thanks", "ok", "okay"
+
+4. **CONTINUE_INCIDENT takes priority** when has_active_incident is TRUE and user provides:
    - Single word answers (e.g., "windows", "cisco", "office365")
-   - Short phrases (e.g., "i am using windows", "office 365")
-   - Email addresses
-   - Error messages or "no error"
-   - ANY response that could be answering a technical question
-   
-2. **UNRELATED_QUERY** should ONLY be used when user asks completely off-topic questions like:
-   - Weather, jokes, general knowledge
-   - Greetings (use GREETING_CONTEXT instead)
-   - Topics clearly unrelated to IT support
-   
-3. **If in doubt with active incident, choose CONTINUE_INCIDENT over UNRELATED_QUERY**
+   - "keep" or "ignore" responses
+   - Short phrases answering questions
+   - Email addresses, error messages, "no error"
 
 Detect the following intents:
-1. GREETING - User is greeting (hi, hello, hey, good morning, etc.) with NO active incident
-2. GREETING_CONTEXT - User is greeting while there's an active incident
-3. TRACK_INCIDENT - User wants to check status of existing incident
-4. ASK_INCIDENT_TYPE - User said ONLY "create incident" or "new incident" WITHOUT describing actual problem
-5. NEW_INCIDENT - User is describing an actual technical problem (e.g., "outlook not working", "VPN down", "can't install python")
-6. CLOSE_INCIDENT - User wants to close/finish current incident
-7. CLEAR_SESSION - User wants to clear session/start fresh (exit, clear, end session, start, restart, etc.)
-8. CONTINUE_INCIDENT - User is providing information for current incident (PRIORITY when has_active_incident is TRUE)
-9. GENERAL_QUERY - General question or conversation with NO active incident
-10. UNRELATED_QUERY - User asks completely off-topic question while there's an active incident (weather, jokes, etc.)
-11. PROVIDE_INCIDENT_ID - User is providing an incident ID for tracking
-12. ASK_INCOMPLETE_INCIDENT - User wants to view/continue an incomplete incident
-13. ASK_PREVIOUS_SOLUTION - User wants to view previous solution or continue previous incident
+1. GREETING - User greeting (hi, hello, bye, thanks)
+2. GREETING_CONTEXT - Greeting with active incident
+3. TRACK_INCIDENT - Check status of existing incident
+4. ASK_INCIDENT_TYPE - User wants to create incident but NO problem described
+5. NEW_INCIDENT - User describes actual technical problem
+6. CLOSE_INCIDENT - User EXPLICITLY wants to close incident
+7. CLEAR_SESSION - Clear session/start fresh
+8. CONTINUE_INCIDENT - Providing info for current incident
+9. GENERAL_QUERY - General question
+10. UNRELATED_QUERY - Off-topic with active incident
+11. PROVIDE_INCIDENT_ID - Providing incident ID
+12. ASK_INCOMPLETE_INCIDENT - View/continue incomplete incident
+13. ASK_PREVIOUS_SOLUTION - View previous solution
 
 Examples:
-- "hi" with NO active incident → GREETING
-- "hi" with active incident → GREETING_CONTEXT
-- "what's the weather?" with active incident → UNRELATED_QUERY
-- "windows" with active incident → CONTINUE_INCIDENT (answering OS question)
-- "office365" with active incident → CONTINUE_INCIDENT (answering account type)
-- "i am using windows" with active incident → CONTINUE_INCIDENT
-- "no error" with active incident → CONTINUE_INCIDENT
-- "bhavanism@gmail.com" with active incident → CONTINUE_INCIDENT
-- "create a incident" after greeting with NO issue → ASK_INCIDENT_TYPE
-- "create a incident for outlook not working" → NEW_INCIDENT
-- "view my previous solution" → ASK_PREVIOUS_SOLUTION
-- "view incomplete incident" → ASK_INCOMPLETE_INCIDENT
+- "I want to create a new incident" → ASK_INCIDENT_TYPE
+- "create a new incident for:" → ASK_INCIDENT_TYPE
+- "create incident for outlook not working" → NEW_INCIDENT
+- "outlook is not opening" → NEW_INCIDENT
+- "bye" → GREETING (NOT CLOSE_INCIDENT)
 
 Respond in JSON format:
-{{
+{
     "intent": "PRIMARY_INTENT",
     "confidence": 0.0-1.0,
     "secondary_intent": "SECONDARY_INTENT or null",
     "extracted_incident_id": "incident_id or null",
     "reasoning": "brief explanation",
     "requires_clarification": true/false
-}}"""
+}"""
 
 GREETING_RESPONSE_PROMPT = """Generate a warm greeting response and ask how you can help.
 
@@ -137,6 +159,7 @@ Generate a polite response that:
 
 Provide only the response text, no JSON."""
 
+# FIND this prompt (around line 260) and UPDATE:
 INCIDENT_STATUS_RESPONSE_PROMPT = """Generate a response about the incident status in paragraph format.
 
 Incident Details:
@@ -147,21 +170,17 @@ Generate a natural paragraph response that includes:
 2. Current status
 3. Brief issue summary
 4. Collected information (if any)
-5. End with: "Message from Admin: [admin_message]"
+5. **CRITICAL**: End with "**Message from Admin:** [admin_message]"
 
-CRITICAL RULES:
+FORMATTING RULES:
 - Write in paragraph format, NOT bullet points
 - The admin message MUST be at the very end
-- If admin_message is empty or default, show the default message based on status
+- Admin message MUST be in bold: **Message from Admin:**
 - Make it conversational and easy to read
-
-Default messages by status:
-- pending_info: "Still need some information."
-- open: "All information collected. Our team will contact you soon."
-- resolved: (use the custom admin message if provided, otherwise: "Incident has been resolved successfully.")
+- Highlight the admin message section clearly
 
 Example output:
-"Your incident INC20251022161532 regarding VPN connection failure is currently resolved. We collected the following information: Operating System - Windows 11, Error Code - 0x800. All required information has been gathered. Message from Admin: The VPN issue has been fixed by our network team."
+"Your incident INC20251022161532 regarding VPN connection failure is currently open. We collected the following information: Operating System - Windows 11, VPN Client - Cisco, Network - Home, Error Message - None. All required information has been gathered. **Message from Admin:** All information collected. Our team will contact you soon."
 
 Provide only the response text, no JSON or formatting markers."""
 CLEAR_SESSION_CONFIRMATION_PROMPT = """Generate the exact same greeting response as initial greeting.
@@ -173,6 +192,7 @@ Generate a response that:
 4. Be identical to the initial greeting
 
 Provide only the response text, no JSON."""
+
 KB_QUESTION_PROMPT = """Based on the knowledge base entry below, you need to gather information from the user.
 
 Knowledge Base Entry:
@@ -327,3 +347,197 @@ Missing Information:
 Generate the next question to continue gathering information. Reference the context naturally and ask for the next piece of required information.
 
 Provide only the question text, no JSON."""
+INCIDENT_SELECTION_DYNAMIC_PROMPT = """Generate a response asking the user to select which incident they want to discuss.
+
+
+Your Active Incidents:
+{incident_list}
+
+
+Instructions:
+1. Start with a confirmation that both incidents are now active
+2. Display the incident list EXACTLY as provided above (already formatted with bullets)
+3. Ask the user to provide the specific Incident ID they want to discuss
+4. Give an example using: {example_id}
+5. Be clear and professional
+6. Do NOT add extra formatting or bullet points - the list is already formatted
+
+
+Example structure:
+✅ Both incidents are now active and being tracked.
+
+**Your Active Incidents:**
+[Insert the incident list exactly as provided]
+
+Please provide the **Incident ID** you want to discuss:
+(Example: {example_id})
+
+
+Provide only the response text, no JSON or extra formatting."""
+INCIDENT_SELECTION_RETRY_PROMPT = """Generate a response when the user didn't provide a valid incident ID.
+
+
+Your Active Incidents:
+{incident_list}
+
+
+Instructions:
+1. Politely inform them that you couldn't find a valid Incident ID
+2. Display the incident list EXACTLY as provided above (already formatted)
+3. Ask them to provide a valid Incident ID
+4. Give an example: {example_id}
+5. Be helpful and clear
+6. Do NOT add extra formatting - the list is already formatted
+
+
+Provide only the response text, no JSON."""
+INITIAL_GREETING_PROMPT = """Generate a warm, professional greeting for an IT helpdesk assistant.
+
+User Message: {user_input}
+Conversation History: {conversation_history}
+
+Generate a response that:
+1. Greets the user warmly with appropriate emoji
+2. Introduces yourself as the IT helpdesk assistant
+3. Asks: "How may I help you? Do you want to track an already created incident or create a new one?"
+4. Be natural, friendly, and professional
+5. Keep it concise (2-3 sentences)
+
+Provide only the response text, no JSON."""
+
+GREETING_WITH_CONTEXT_PROMPT = """Generate a greeting when the user returns and has an active incident.
+
+User Message: {user_input}
+Conversation History: {conversation_history}
+Current Incident: {incident_id}
+Has Pending Info: {has_pending_info}
+Last Question Asked: {last_question}
+
+Generate a response that:
+1. Greets the user warmly
+2. If has_pending_info is True, mention you're continuing with their incident and repeat the last question
+3. If has_pending_info is False, ask how you can help them further
+4. Be contextual and helpful
+5. Reference the conversation naturally
+
+Provide only the response text, no JSON."""
+
+FRESH_SESSION_GREETING_PROMPT = """Generate a greeting for a fresh session after the user cleared their previous session.
+
+Generate a response that:
+1. Greets the user warmly
+2. Introduces yourself as IT helpdesk assistant
+3. Says: "How may I help you? Do you want to track an already created incident or create a new one?"
+4. Be identical in tone to the initial greeting
+5. Make it feel like a fresh start
+
+Provide only the response text, no JSON."""
+
+KEEP_IGNORE_MESSAGE_PROMPT = """Generate a message asking the user if they want to KEEP or IGNORE their previous incident.
+
+New Issue: {new_issue}
+Current Issue: {current_issue}
+Current Incident ID: {incident_id}
+
+Generate a response that:
+1. Acknowledges their new concern about: {new_issue}
+2. Mentions they have an active incident ({incident_id}) regarding: {current_issue}
+3. Asks: "Would you like to keep the previous incident open and create a new one, or ignore the previous incident and focus on this new issue?"
+4. Explains KEEP and IGNORE options clearly:
+   - KEEP: Both incidents will remain open and tracked
+   - IGNORE: Previous incident will be closed, focus on new issue
+5. Asks them to reply with either KEEP or IGNORE
+6. Be polite, clear, and professional
+
+Provide only the response text, no JSON."""
+
+KEEP_IGNORE_CLARIFICATION_PROMPT = """Generate a clarification message when the user doesn't clearly say KEEP or IGNORE.
+
+Generate a response that:
+1. Politely says you didn't understand their response
+2. Asks them to reply with either:
+   - KEEP (to keep previous incident open)
+   - IGNORE (to close previous incident and focus on new issue)
+3. Be brief and clear
+4. Keep it friendly
+
+Provide only the response text, no JSON."""
+
+INCIDENT_COMPLETION_PROMPT = """Generate a completion message when all information has been collected for an incident.
+
+Incident ID: {incident_id}
+
+Generate a response that:
+1. Thank the user for providing all necessary information
+2. Confirm the incident has been created successfully
+3. Show the Incident ID: {incident_id}
+4. Mention that the IT team will review and get back soon
+5. Be professional and reassuring
+
+Provide only the response text, no JSON."""
+
+DEFAULT_ADMIN_MESSAGE_PROMPT = """Generate a default admin message for an incident status.
+
+Status: {status}
+
+Generate an appropriate message for this status:
+- pending_info: Message indicating more information is needed
+- open: Message indicating all info collected, team will contact soon
+- resolved: Message indicating incident has been resolved
+
+Requirements:
+1. Be brief and clear
+2. Be professional
+3. Give appropriate status update
+4. Keep it to 1-2 sentences
+
+Provide only the message text, no JSON."""
+POLITE_GOODBYE_PROMPT = """Generate a polite goodbye message for the IT helpdesk.
+
+Requirements:
+1. Thank the user politely
+2. Let them know their incidents are still being tracked
+3. Mention they can return anytime for updates
+4. Be warm and professional
+5. Keep it brief (2-3 sentences)
+6. DO NOT mention closing any incidents
+
+Provide only the response text, no JSON."""
+ASK_INCIDENT_TYPE_PROMPT = """Generate a response when user wants to create an incident but hasn't described the problem.
+
+User Message: {user_input}
+Conversation History: {conversation_history}
+
+The user has expressed intent to create an incident but hasn't described what the problem is.
+
+Generate a response that:
+1. Acknowledge their request to create a new incident
+2. Ask them to describe the technical issue they're experiencing
+3. Provide helpful examples of common IT issues:
+   - Email problems (Outlook not opening, can't send emails)
+   - Network issues (VPN not connecting, WiFi problems)
+   - Software installation or access requests
+   - Password reset needed
+   - System performance issues
+   - Login or access problems
+4. Encourage them to be specific about the problem
+5. Be friendly, helpful, and professional
+6. Keep it conversational (not a bullet list unless giving examples)
+
+Example flow:
+"Sure, I can help you create a new incident. Could you please tell me what type of issue you're facing? For example, is it related to email, VPN, password, software installation, or something else? The more details you provide, the better I can assist you."
+
+Provide only the response text, no JSON."""
+INCIDENT_CREATION_CONFIRMATION_PROMPT = """Generate a brief confirmation message before creating an incident.
+
+Issue Description: {issue_description}
+
+Generate a response that:
+1. Confirms you understand the issue
+2. Lets them know you're creating the incident now
+3. Be brief and professional (1-2 sentences)
+
+Example:
+"Got it! I'm creating a new incident for your {issue_description}. Please wait a moment while I gather the necessary information..."
+
+Provide only the response text, no JSON."""

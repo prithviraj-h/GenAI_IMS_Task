@@ -1,4 +1,4 @@
-<!-- static/index.html -->
+<!--static/index.html-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,62 +10,71 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎫 IT Helpdesk Assistant</h1>
-            <p class="subtitle">Report technical issues and get help</p>
+            <div class="logo-section">
+                <h1 class="logo">IT Helpdesk Assistant</h1>
+                
+            </div>
             <button class="clear-session-btn" onclick="clearSession()" title="Clear session and start fresh">
                 🔄 Clear Session
             </button>
         </div>
 
-        <div class="chat-container">
-            <div class="chat-messages" id="chatMessages">
-                <div class="message bot-message">
-                    <div class="message-content">
-                        <p>Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you.</p>
-                        <p>How may I help you? Do you want to track an already created incident or create a new one?</p>
-                        <div class="action-buttons-container">
-                            <button class="action-button" data-value="track a incident" onclick="handleActionButton(this)">Track Incident</button>
-                            <button class="action-button" data-value="create a incident" onclick="handleActionButton(this)">Create New Incident</button>
-                            <button class="action-button" data-value="view incomplete incident" onclick="handleActionButton(this)">View Incomplete Incident</button>
-                        </div>
+        <div class="main-content">
+            <div class="chat-section">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <!-- Messages will be loaded dynamically from server -->
+                    </div>
+
+                    <div class="chat-input-container">
+                        <textarea
+                            id="userInput"
+                            class="chat-input"
+                            placeholder="Describe your issue here..."
+                            rows="3"
+                        ></textarea>
+                        <button id="sendButton" class="send-button">
+                            <span>Send</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="info-panel">
+                    <div class="info-item">
+                        <span class="info-label">Session ID:</span>
+                        <span class="info-value" id="sessionId">Not started</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Current Incident:</span>
+                        <span class="info-value" id="currentIncident">None</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value" id="incidentStatus">-</span>
+                    </div>
+                    <div class="info-item">
+                        <button class="history-btn" onclick="viewHistory()" title="View session history">
+                            📜 View History
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="chat-input-container">
-                <textarea
-                    id="userInput"
-                    class="chat-input"
-                    placeholder="Describe your issue here..."
-                    rows="3"
-                ></textarea>
-                <button id="sendButton" class="send-button">
-                    <span>Send</span>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <div class="info-panel">
-            <div class="info-item">
-                <span class="info-label">Session ID:</span>
-                <span class="info-value" id="sessionId">Not started</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Current Incident:</span>
-                <span class="info-value" id="currentIncident">None</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Status:</span>
-                <span class="info-value" id="incidentStatus">-</span>
-            </div>
-            <div class="info-item">
-                <button class="history-btn" onclick="viewHistory()" title="View session history">
-                    📜 View History
-                </button>
+            <div class="chatbot-image-section">
+                <div class="chatbot-image-container">
+                    <img src="/static/chat.jpg" 
+                         alt="AI Chatbot Assistant" 
+                         class="chatbot-image">
+                    <div class="chatbot-pulse"></div>
+                </div>
+                <div class="chatbot-status">
+                    <div class="status-indicator online"></div>
+                    <span>AI Assistant Online</span>
+                </div>
             </div>
         </div>
     </div>
@@ -79,6 +88,40 @@
             </div>
             <div class="modal-body" id="historyModalBody">
                 <p class="loading">Loading history...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>About Sigmoid IT Helpdesk</h2>
+                <span class="close" onclick="closeAboutModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="about-content">
+                    <h3>Welcome to Sigmoid IT Helpdesk Assistant</h3>
+                    <p>Our AI-powered helpdesk system is designed to provide quick and efficient technical support for all your IT needs.</p>
+                    
+                    <div class="features">
+                        <h4>Features:</h4>
+                        <ul>
+                            <li>Create and track IT incidents</li>
+                            <li>Get instant AI-powered assistance</li>
+                            <li>View session history</li>
+                            <li>Real-time status updates</li>
+                            <li>Secure session management</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="contact-info">
+                        <h4>Need Help?</h4>
+                        <p>If you need additional assistance, please contact our IT support team:</p>
+                        <p>📧 Email: support@sigmoid.com</p>
+                        <p>📞 Phone: +1 (555) 123-HELP</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

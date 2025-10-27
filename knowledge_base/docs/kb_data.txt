@@ -1,6 +1,6 @@
 # Knowledge Base Entries
-# Last Updated: 2025-10-23 17:37:58
-# Total Entries: 7
+# Last Updated: 2025-10-24 18:00:17
+# Total Entries: 8
 
 
 ==================================================
@@ -138,4 +138,29 @@ Verify printer settings (correct paper type and quality).
 Update or reinstall printer drivers.
 
 Try printing from a different application or document.
+--------------------------------------------------
+
+==================================================
+[KB_ID: 8]
+
+Use Case: unable to trun my laptop
+
+Required Info:
+- Laptop model
+- Operating system
+- Any error messages displayed
+- Recent changes to the laptop (e.g.
+- new software installed
+- updates)
+
+Solution Steps:
+- Power off immediately and unplug the charger.
+
+- Remove the battery (if removable).
+
+- Disconnect all peripherals (mouse, USB drives, etc.).
+
+- Blot the spill gently with a soft, dry cloth — do not wipe.
+
+- Turn the laptop upside down to let liquid drain out.
 --------------------------------------------------

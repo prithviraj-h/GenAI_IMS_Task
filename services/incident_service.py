@@ -23,7 +23,7 @@ class IncidentService:
             'session_id': session_id,
             'active_incidents': [],
             'conversation_context': [],
-            'awaiting_response': None,  # Track what we're waiting for
+            'awaiting_response': None,
             'created_on': datetime.utcnow(),
             'updated_on': datetime.utcnow()
         }
@@ -42,14 +42,6 @@ class IncidentService:
     def clear_session(self, session_id: str) -> bool:
         """Clear session history and start fresh"""
         try:
-            # Close all active incidents in this session
-            session = mongo_client.get_session(session_id)
-            if session:
-                active_incidents = session.get('active_incidents', [])
-                for incident_id in active_incidents:
-                    self._close_incident_silently(incident_id)
-            
-            # Update session to clear everything
             mongo_client.update_session(session_id, {
                 'conversation_context': [],
                 'active_incidents': [],
@@ -61,26 +53,15 @@ class IncidentService:
         except Exception as e:
             logger.error(f"Error clearing session: {e}")
             return False
-    
-    def _close_incident_silently(self, incident_id: str):
-        """Close incident without generating response"""
-        try:
-            mongo_client.update_incident(incident_id, {
-                'status': 'closed',
-                'closed_on': datetime.utcnow()
-            })
-        except Exception as e:
-            logger.error(f"Error closing incident silently: {e}")
-    
+   
     def update_session_context(self, session_id: str, user_input: str, assistant_response: str):
-        """Update session conversation context - keep only last 10 messages (5 pairs)"""
+        """Update session conversation context - keep only last 10 messages"""
         session = mongo_client.get_session(session_id)
         if session:
             conversation_context = session.get('conversation_context', [])
             conversation_context.append({'role': 'user', 'content': user_input})
             conversation_context.append({'role': 'assistant', 'content': assistant_response})
             
-            # ✅ FIX: Keep only last 10 messages (5 user + 5 assistant)
             if len(conversation_context) > 10:
                 conversation_context = conversation_context[-10:]
             
@@ -117,14 +98,20 @@ class IncidentService:
             return session.get('conversation_context', [])
         return []
     
+    # In the process_user_query method, replace the section that checks for new issue descriptions:
+
+    # In the process_user_query method, make sure ALL code paths return a dictionary
+
     def process_user_query(self, user_input: str, session_id: str) -> Dict[str, Any]:
         """Main method to process user query with intent detection"""
         try:
-            # Get or create session
             session_id = self.get_or_create_session(session_id)
             session = mongo_client.get_session(session_id)
             
-            # Maintain only last 10 messages (5 pairs)
+            if not session:
+                logger.error(f"Failed to get or create session: {session_id}")
+                return self._create_error_response(session_id, "Failed to create session")
+            
             conversation_history = session.get('conversation_context', [])
             if len(conversation_history) > 10:
                 conversation_history = conversation_history[-10:]
@@ -137,37 +124,72 @@ class IncidentService:
             
             has_active_incident = len(active_incidents) > 0
             
-            # Handle issue description after asking what type of incident
+            # ✅ NEW: Handle issue_description response
+            if awaiting_response == 'issue_description':
+                logger.info(f"User provided issue description: '{user_input}'")
+                
+                # Clear awaiting response
+                mongo_client.update_session(session_id, {
+                    'awaiting_response': None
+                })
+                
+                # ✅ Generate confirmation message before creating incident
+                confirmation = llm_service.generate_incident_creation_confirmation(user_input)
+                self.update_session_context(session_id, user_input, confirmation)
+                
+                # Add confirmation message
+                temp_response = {
+                    'message': confirmation,
+                    'session_id': session_id,
+                    'incident_id': None,
+                    'status': 'confirming_creation'
+                }
+                
+                # Now create the incident
+                if has_active_incident:
+                    return self._handle_new_incident_with_active(user_input, session_id, conversation_history, active_incidents)
+                else:
+                    return self._handle_new_incident(user_input, session_id, conversation_history)
+            
+            # Handle keep/ignore response FIRST
+            if awaiting_response == 'keep_or_ignore':
+                return self._handle_keep_ignore_response(user_input, session_id, conversation_history, active_incidents)
+            
+            # Handle other awaiting responses
             if awaiting_response == 'issue_description':
                 mongo_client.update_session(session_id, {
                     'awaiting_response': None
                 })
                 return self._handle_new_incident(user_input, session_id, conversation_history)
             
-            # Handle previous solution ID response
             if awaiting_response == 'previous_solution_id':
                 return self._handle_previous_solution_id(user_input, session_id, conversation_history, active_incidents)
             
-            # Handle incident ID selection after KEEP
             if awaiting_response == 'incident_id_selection':
                 return self._handle_incident_selection(user_input, session_id, conversation_history, active_incidents)
             
-            # Handle keep/ignore response
-            if awaiting_response == 'keep_or_ignore':
-                return self._handle_keep_ignore_response(user_input, session_id, conversation_history, active_incidents)
+            # Improved detection for new issue descriptions
+            if has_active_incident and not awaiting_response:
+                current_incident_id = active_incidents[-1]
+                current_incident = mongo_client.get_incident_by_id(current_incident_id)
+                
+                if current_incident and current_incident.get('status') == 'pending_info':
+                    # Check if this is clearly a NEW issue description (not an answer)
+                    is_new_issue = self._is_clearly_new_issue_description(user_input, current_incident)
+                    
+                    if is_new_issue:
+                        logger.info(f"🎯 User describing NEW issue while active incident exists → KEEP/IGNORE: '{user_input}'")
+                        return self._handle_new_incident_with_active(user_input, session_id, conversation_history, active_incidents)
             
-            # Check if user is asking about previous solution/incident
-            if self._is_asking_about_previous_solution(user_input):
-                return self._handle_previous_solution_query(user_input, session_id, conversation_history)
-            
-            # ✅ PRIORITY FIX: Short answers with active incident → CONTINUE_INCIDENT
+            # Check for short answers with active incident (only if it's not a new issue)
             if has_active_incident and not awaiting_response:
                 user_lower = user_input.lower().strip()
                 word_count = len(user_input.split())
                 
-                # Short answers (1-7 words) likely continuing the incident
-                if word_count <= 7:
-                    # Check if it's NOT a command/new intent
+                # Only treat as CONTINUE_INCIDENT if it's likely an answer, not a new issue
+                is_likely_answer = self._is_likely_answer_to_current_question(user_input, active_incidents)
+                
+                if word_count <= 7 and is_likely_answer:
                     not_command = not any(cmd in user_lower for cmd in [
                         'create incident', 'track incident', 'new incident', 
                         'close incident', 'clear session', 'view incomplete',
@@ -188,10 +210,15 @@ class IncidentService:
                 session_id
             )
             
+            # ✅ FIX: Ensure intent_data is not None
+            if not intent_data:
+                logger.error("LLM intent detection returned None, using fallback")
+                intent_data = self._fallback_intent_detection(user_input, has_active_incident)
+            
             intent = intent_data.get('intent', 'GENERAL_QUERY')
             logger.info(f"Processing intent: {intent}")
             
-            # Handle different intents
+            # Handle different intents - ensure ALL return a value
             if intent == 'GREETING':
                 return self._handle_greeting(user_input, session_id, conversation_history)
             
@@ -224,9 +251,6 @@ class IncidentService:
                 return self._handle_ask_previous_solution(user_input, session_id, conversation_history)
             
             elif intent == 'NEW_INCIDENT':
-                if awaiting_response == 'keep_or_ignore':
-                    return self._handle_keep_ignore_response(user_input, session_id, conversation_history, active_incidents)
-                
                 if has_active_incident:
                     return self._handle_new_incident_with_active(user_input, session_id, conversation_history, active_incidents)
                 else:
@@ -240,6 +264,7 @@ class IncidentService:
                     return self._handle_new_incident(user_input, session_id, conversation_history)
             
             else:
+                # ✅ FIX: Ensure this always returns a value
                 response = llm_service.handle_general_query(user_input, conversation_history)
                 self.update_session_context(session_id, user_input, response)
                 return {
@@ -248,23 +273,180 @@ class IncidentService:
                     'incident_id': None,
                     'status': None
                 }
-        
+            
         except Exception as e:
             logger.error(f"Error processing user query: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return {
-                'message': "I apologize, but I encountered an error processing your request. Please try again.",
-                'session_id': session_id,
-                'incident_id': None,
-                'status': 'error'
-            }
+            # ✅ FIX: Always return a proper error response
+            return self._create_error_response(session_id, str(e))
+
+    # ✅ ADD NEW METHOD: Create standardized error response
+    def _create_error_response(self, session_id: str, error_msg: str = "") -> Dict[str, Any]:
+        """Create a standardized error response"""
+        return {
+            'message': "I apologize, but I encountered an error processing your request. Please try again.",
+            'session_id': session_id or "",
+            'incident_id': None,
+            'status': 'error'
+        }
+
+    # ✅ ADD NEW METHOD: Fallback intent detection
+    def _fallback_intent_detection(self, user_input: str, has_active_incident: bool) -> Dict[str, Any]:
+        """Fallback intent detection when LLM fails"""
+        user_lower = user_input.lower().strip()
         
+        if any(word in user_lower for word in ['hi', 'hello', 'hey', 'good morning', 'good afternoon']):
+            return {"intent": "GREETING", "confidence": 0.9}
+        elif any(word in user_lower for word in ['track', 'check', 'status', 'view incident']):
+            return {"intent": "TRACK_INCIDENT", "confidence": 0.8}
+        elif any(word in user_lower for word in ['create', 'new incident', 'report']):
+            return {"intent": "NEW_INCIDENT", "confidence": 0.8}
+        elif re.search(r'INC\d+', user_input):
+            incident_id = re.search(r'INC\d+', user_input).group()
+            return {"intent": "PROVIDE_INCIDENT_ID", "confidence": 0.9, "extracted_incident_id": incident_id}
+        else:
+            return {"intent": "CONTINUE_INCIDENT" if has_active_incident else "NEW_INCIDENT", "confidence": 0.6}
+
+    # ✅ ADD NEW METHOD: Improved detection for new issues
+    def _is_clearly_new_issue_description(self, user_input: str, current_incident: Dict) -> bool:
+        """Check if user input is clearly describing a new technical issue"""
+        user_lower = user_input.lower().strip()
+        current_issue = current_incident.get('user_demand', '').lower()
+        
+        # ✅ FIX: Check for "no error" or similar negative responses FIRST
+        negative_error_responses = [
+            'no error', 'no errors', 'none', 'nothing', 'not seeing', 
+            "don't see", 'no error message', 'no message'
+        ]
+        if any(phrase in user_lower for phrase in negative_error_responses):
+            logger.info(f"✅ Detected negative error response, NOT a new issue: '{user_input}'")
+            return False  # This is an answer, not a new issue
+        
+        # Common technical issue patterns that indicate NEW issues
+        new_issue_patterns = [
+            'not opening', 'not working', 'not connecting', 'cannot access', 'failed',
+            'broken', 'error', 'issue with', 'problem with', 'trouble with',
+            'outlook', 'email', 'vpn', 'network', 'wifi', 'software', 'hardware',
+            'install', 'password', 'login', 'access', 'connection', 'performance',
+            'slow', 'crash', 'freeze', 'hang', 'unresponsive'
+        ]
+        
+        # Check if input matches new issue patterns
+        has_issue_keywords = any(pattern in user_lower for pattern in new_issue_patterns)
+        
+        # Get current question context
+        current_missing_info = current_incident.get('missing_info', [])
+        current_field = current_missing_info[0] if current_missing_info else ""
+        
+        # Check if this is NOT answering the current question
+        is_not_answer = True
+        if current_field:
+            field_lower = current_field.lower()
+            # If the user input seems to answer the current field, it's not a new issue
+            if any(keyword in field_lower for keyword in ['operating system', 'os']):
+                is_not_answer = not any(os in user_lower for os in ['windows', 'mac', 'linux', 'macos'])
+            elif 'vpn client' in field_lower:
+                is_not_answer = not any(vpn in user_lower for vpn in ['cisco', 'anyconnect', 'globalprotect'])
+            elif 'error message' in field_lower or 'error code' in field_lower:
+                # ✅ FIX: Check for error-related responses
+                is_not_answer = not any(word in user_lower for word in ['error', 'code', 'message', 'no', 'none'])
+            elif 'account type' in field_lower:
+                is_not_answer = not any(acc in user_lower for acc in ['office365', 'exchange', 'gmail'])
+        
+        # Check if it describes a different issue than current one
+        is_different_issue = True
+        if current_issue:
+            current_issue_keywords = set(current_issue.split())
+            user_keywords = set(user_lower.split())
+            # If they share significant keywords, might be same issue
+            common_keywords = current_issue_keywords.intersection(user_keywords)
+            if len(common_keywords) > 2:  # If they share more than 2 keywords, likely same issue
+                is_different_issue = False
+        
+        logger.info(f"New issue check - Keywords: {has_issue_keywords}, Not answer: {is_not_answer}, Different: {is_different_issue}")
+        
+        return has_issue_keywords and is_not_answer and is_different_issue
+    # ✅ ADD NEW METHOD: Check if input is likely an answer to current question
+    def _is_likely_answer_to_current_question(self, user_input: str, active_incidents: List[str]) -> bool:
+        """Check if user input is likely answering the current question"""
+        if not active_incidents:
+            return False
+        
+        current_incident_id = active_incidents[-1]
+        current_incident = mongo_client.get_incident_by_id(current_incident_id)
+        
+        if not current_incident or current_incident.get('status') != 'pending_info':
+            return False
+        
+        current_missing_info = current_incident.get('missing_info', [])
+        if not current_missing_info:
+            return False
+        
+        current_field = current_missing_info[0].lower()
+        user_lower = user_input.lower().strip()
+        
+        # Check if this looks like an answer to the current field
+        if 'operating system' in current_field or 'os' in current_field:
+            return any(os in user_lower for os in ['windows', 'mac', 'linux', 'macos', 'ubuntu'])
+        elif 'vpn client' in current_field:
+            return any(vpn in user_lower for vpn in ['cisco', 'anyconnect', 'globalprotect', 'forticlient'])
+        elif 'error message' in current_field or 'error code' in current_field:
+            # ✅ FIX: Accept both positive and negative error responses
+            return (
+                'error' in user_lower or 
+                any(phrase in user_lower for phrase in ['no error', 'none', 'nothing', 'not seeing', "don't see"])
+            )
+        elif 'account type' in current_field:
+            return any(acc in user_lower for acc in ['office365', 'exchange', 'gmail', 'outlook'])
+        elif 'network type' in current_field:
+            return any(net in user_lower for net in ['home', 'office', 'wifi', 'ethernet'])
+        else:
+            # For generic fields, check if it's a short specific answer
+            word_count = len(user_input.split())
+            return word_count <= 5 and len(user_input) > 1    
+    def _is_new_issue_description(self, user_input: str, current_incident: Dict) -> bool:
+        """Check if user input is clearly describing a new issue vs answering current question"""
+        user_lower = user_input.lower().strip()
+        current_issue = current_incident.get('user_demand', '').lower()
+        
+        # Keywords that indicate a new issue description
+        new_issue_keywords = [
+            'not opening', 'not working', 'not connecting', 'cannot access',
+            'broken', 'failed', 'error', 'issue with', 'problem with',
+            'outlook', 'email', 'vpn', 'network', 'wifi', 'software',
+            'install', 'password', 'login'
+        ]
+        
+        # Check if this looks like a complete issue description
+        has_new_issue_keywords = any(keyword in user_lower for keyword in new_issue_keywords)
+        is_complete_sentence = len(user_input.split()) > 3
+        
+        # Check if it's NOT answering the current question
+        current_missing_info = current_incident.get('missing_info', [])
+        current_field = current_missing_info[0] if current_missing_info else ""
+        
+        # If user is describing a different issue than current one
+        is_different_issue = (current_issue not in user_lower and 
+                             not any(field.lower() in user_lower for field in current_missing_info))
+        
+        return has_new_issue_keywords and is_complete_sentence and is_different_issue
+
     def _handle_greeting(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
-        """Handle greeting intent"""
-        response = "Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you. How may I help you? Do you want to track an already created incident or create a new one?"
-        self.update_session_context(session_id, user_input, response)
+        """Handle greeting intent - NEVER closes incidents"""
+        user_lower = user_input.lower().strip()
         
+        # Check if it's a goodbye/thank you
+        is_goodbye = any(word in user_lower for word in ['bye', 'goodbye', 'thanks', 'thank you'])
+        
+        if is_goodbye:
+            # ✅ Use LLM to generate polite goodbye without closing incidents
+            response = llm_service.generate_polite_goodbye()
+        else:
+            # ✅ Use LLM to generate initial greeting
+            response = llm_service.generate_initial_greeting(user_input, conversation_history)
+        
+        self.update_session_context(session_id, user_input, response)
         return {
             'message': response,
             'session_id': session_id,
@@ -280,31 +462,23 @@ class IncidentService:
     
     def _handle_greeting_context(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle greeting while there's an active incident"""
-        if active_incidents:
-            current_incident_id = active_incidents[-1]
-            current_incident = mongo_client.get_incident_by_id(current_incident_id)
-            
-            if current_incident and current_incident.get('status') == 'pending_info':
-                # Get the last question that was asked
-                incident_conversation = current_incident.get('conversation_history', [])
-                last_question = ""
-                for msg in reversed(incident_conversation):
-                    if msg.get('role') == 'assistant':
-                        last_question = msg.get('content', '')
-                        break
-                
-                response = f"Hello! 👋 Thanks for getting back. Let's continue with your incident.\n\n{last_question}"
-            else:
-                response = "Hello! 👋 How can I help you further?"
-        else:
-            response = "Hello! 👋 How can I help you today?"
+        current_incident_id = active_incidents[-1] if active_incidents else None
+        current_incident = mongo_client.get_incident_by_id(current_incident_id) if current_incident_id else None
+        
+        # ✅ Use LLM to generate contextual greeting
+        response = llm_service.generate_greeting_with_context(
+            user_input,
+            conversation_history,
+            current_incident,
+            current_incident_id
+        )
         
         self.update_session_context(session_id, user_input, response)
         return {
             'message': response,
             'session_id': session_id,
-            'incident_id': current_incident_id if active_incidents else None,
-            'status': 'pending_info' if active_incidents else None
+            'incident_id': current_incident_id,
+            'status': current_incident.get('status') if current_incident else None
         }
     
     def _handle_unrelated_query(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
@@ -314,7 +488,6 @@ class IncidentService:
             current_incident = mongo_client.get_incident_by_id(current_incident_id)
             
             if current_incident and current_incident.get('status') == 'pending_info':
-                # Get the last question that was asked
                 incident_conversation = current_incident.get('conversation_history', [])
                 last_question = ""
                 for msg in reversed(incident_conversation):
@@ -338,12 +511,9 @@ class IncidentService:
     
     def _handle_clear_session(self, session_id: str, conversation_history: List[Dict], user_input: str) -> Dict[str, Any]:
         """Handle clear session intent"""
-        # Clear the session first
         self.clear_session(session_id)
         
-        # Generate the exact same greeting as initial greeting
-        response = "Hi there! 👋 Welcome to the IT helpdesk. I'm here to assist you. How may I help you? Do you want to track an already created incident or create a new one?"
-        
+        response = llm_service.generate_fresh_session_greeting()
         self.update_session_context(session_id, user_input, response)
         
         return {
@@ -372,7 +542,6 @@ class IncidentService:
             'status': 'awaiting_incident_id'
         }
     
-    # Update the _handle_track_incident_by_id method to include admin message prominently
     def _handle_track_incident_by_id(self, incident_id: str, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle tracking incident by ID with admin message"""
         try:
@@ -388,12 +557,10 @@ class IncidentService:
                     'status': 'not_found'
                 }
             
-            # Get admin message - use default if empty
             admin_message = incident.get('admin_message', '')
             if not admin_message:
                 admin_message = self._get_default_admin_message(incident.get('status', ''))
             
-            # Generate status response with prominent admin message
             incident_details = {
                 'incident_id': incident.get('incident_id'),
                 'status': incident.get('status'),
@@ -437,21 +604,17 @@ class IncidentService:
                 'status': None
             }
         
-        # Close the most recent active incident
         incident_id = active_incidents[-1]
         incident = mongo_client.get_incident_by_id(incident_id)
         
         if incident:
-            # Mark incident as closed
             mongo_client.update_incident(incident_id, {
                 'status': 'closed',
                 'closed_on': datetime.utcnow()
             })
             
-            # Remove from active incidents
             self.remove_incident_from_session(session_id, incident_id)
             
-            # Generate confirmation
             response = llm_service.generate_close_incident_confirmation(
                 incident_id, 
                 incident.get('user_demand', 'your issue')
@@ -480,7 +643,6 @@ class IncidentService:
         response = "I'd be happy to help you with a previous incident. Please provide the Incident ID (e.g., INC20251022150744) for which you'd like to view the solution or continue the conversation."
         self.update_session_context(session_id, user_input, response)
         
-        # Mark that we're awaiting incident ID for previous solution
         mongo_client.update_session(session_id, {
             'awaiting_response': 'previous_solution_id'
         })
@@ -491,12 +653,12 @@ class IncidentService:
             'incident_id': None,
             'status': 'awaiting_previous_incident_id'
         }
+    
     def _handle_ask_incomplete_incident(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle request to view incomplete incident"""
         response = "I'd be happy to help you continue an incomplete incident. Please provide the Incident ID (e.g., INC20251022150744) to continue from where you left off:"
         self.update_session_context(session_id, user_input, response)
         
-        # Mark that we're awaiting incident ID for incomplete incident
         mongo_client.update_session(session_id, {
             'awaiting_response': 'previous_solution_id'
         })
@@ -507,9 +669,9 @@ class IncidentService:
             'incident_id': None,
             'status': 'awaiting_previous_incident_id'
         }
+    
     def _handle_previous_solution_id(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle incident ID provided for previous solution/incomplete incident request"""
-        # Extract incident ID from user input
         incident_id_match = re.search(r'INC\d+', user_input)
         
         if not incident_id_match:
@@ -523,15 +685,12 @@ class IncidentService:
             }
         
         incident_id = incident_id_match.group()
-        
-        # Check if incident exists
         incident = mongo_client.get_incident_by_id(incident_id)
         
         if not incident:
             response = f"No previous incident found for ID: {incident_id}. Please check the ID and try again."
             self.update_session_context(session_id, user_input, response)
             
-            # Clear awaiting state
             mongo_client.update_session(session_id, {
                 'awaiting_response': None
             })
@@ -543,23 +702,18 @@ class IncidentService:
                 'status': 'incident_not_found'
             }
         
-        # Clear awaiting state
         mongo_client.update_session(session_id, {
             'awaiting_response': None
         })
         
-        # Check if incident is incomplete (pending_info or open)
         if incident.get('status') in ['pending_info', 'open']:
-            # Continue from where it stopped
             response_prefix = f"📋 Continuing with **{incident_id}** from where you left off.\n\n"
             response_prefix += f"**Issue:** {incident.get('user_demand', 'Unknown issue')}\n\n"
             
-            # Get the last question asked
             incident_conversation = incident.get('conversation_history', [])
             missing_info = incident.get('missing_info', [])
             
             if incident_conversation:
-                # Find last assistant message
                 last_question = ""
                 for msg in reversed(incident_conversation):
                     if msg.get('role') == 'assistant':
@@ -569,21 +723,17 @@ class IncidentService:
                 if last_question:
                     response = response_prefix + "Let's continue: " + last_question
                 else:
-                    # Generate new question
                     if missing_info:
                         response = response_prefix + f"Can you provide information about: {missing_info[0]}?"
                     else:
                         response = response_prefix + "Can you provide more details about this issue?"
             else:
-                # No conversation history, ask first question
                 if missing_info:
                     response = response_prefix + f"Can you provide information about: {missing_info[0]}?"
                 else:
                     response = response_prefix + "Can you provide more details about this issue?"
             
             self.update_session_context(session_id, user_input, response)
-            
-            # Add to active incidents
             self.add_incident_to_session(session_id, incident_id)
             
             return {
@@ -594,7 +744,6 @@ class IncidentService:
             }
         
         elif incident.get('status') == 'resolved':
-            # Show solution for resolved incidents
             solution_steps = incident.get('solution_steps', 'No solution steps provided yet.')
             admin_message = incident.get('admin_message', '')
             
@@ -617,8 +766,13 @@ class IncidentService:
             }
         
         else:
-            # Incident is closed or in another state
-            response = f"Incident {incident_id} is currently in **{incident.get('status')}** status. Would you like to create a new incident?"
+            response = f"Incident {incident_id} is currently in **{incident.get('status')}** status. "
+            
+            if incident.get('status') == 'resolved':
+                response += "This incident has been resolved. "
+            
+            response += "Would you like to create a new incident?"
+            
             self.update_session_context(session_id, user_input, response)
             
             return {
@@ -627,25 +781,22 @@ class IncidentService:
                 'incident_id': incident_id,
                 'status': incident.get('status')
             }
-        
+    
     def _handle_new_incident_with_active(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle new incident when user has active incidents"""
-        # Get current incident details
         current_incident_id = active_incidents[-1]
         current_incident = mongo_client.get_incident_by_id(current_incident_id)
         current_issue = current_incident.get('user_demand', 'your current issue') if current_incident else 'your current issue'
         
-        # Generate response asking to keep or ignore
-        response = (f"I understand that you're also experiencing issues with: {user_input}\n\n"
-                   f"I see that you currently have an active incident regarding {current_issue} ({current_incident_id}).\n\n"
-                   f"Would you like to keep the previous incident open and create a new one, or ignore the previous incident and focus on this new issue?\n\n"
-                   f"• **Keep:** Both incidents will remain open and be tracked in your session.\n"
-                   f"• **Ignore:** The previous incident will be closed, and we'll focus on the new issue.\n\n"
-                   f"Please reply with either **KEEP** or **IGNORE**.")
+        # ✅ Use LLM to generate keep/ignore message
+        response = llm_service.generate_keep_ignore_message(
+            user_input,
+            current_issue,
+            current_incident_id
+        )
         
         self.update_session_context(session_id, user_input, response)
         
-        # Mark that we're awaiting keep/ignore response
         mongo_client.update_session(session_id, {
             'awaiting_response': 'keep_or_ignore',
             'pending_new_incident_query': user_input
@@ -663,6 +814,9 @@ class IncidentService:
             ]
         }
     
+    # In backend/services/incident_service.py
+# Replace the _handle_keep_ignore_response method with this fixed version:
+
     def _handle_keep_ignore_response(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle user's response to keep or ignore previous incident"""
         user_lower = user_input.lower().strip()
@@ -670,30 +824,40 @@ class IncidentService:
         pending_query = session.get('pending_new_incident_query', '')
         
         if 'ignore' in user_lower:
-            # Close previous incidents and CLEAR SESSION HISTORY
-            for incident_id in active_incidents:
-                self._close_incident_silently(incident_id)
-                self.remove_incident_from_session(session_id, incident_id)
+            logger.info(f"User chose IGNORE - closing incidents: {active_incidents}")
             
-            # Clear conversation history completely
+            # Delete all active incidents from database
+            for incident_id in active_incidents:
+                try:
+                    result = mongo_client.incidents_collection.delete_one({'incident_id': incident_id})
+                    if result.deleted_count > 0:
+                        logger.info(f"✅ Deleted incident: {incident_id}")
+                    else:
+                        logger.warning(f"⚠️ Could not delete incident: {incident_id}")
+                except Exception as e:
+                    logger.error(f"❌ Error deleting incident {incident_id}: {e}")
+            
+            # Clear the session completely
             mongo_client.update_session(session_id, {
                 'conversation_context': [],
+                'active_incidents': [],
                 'pending_new_incident_query': None,
                 'awaiting_response': None
             })
             
-            # Process new incident with EMPTY conversation history
+            logger.info(f"✅ Session cleared and incidents deleted for IGNORE choice")
+            
+            # Process new incident with completely fresh session
             return self._handle_new_incident(pending_query if pending_query else user_input, session_id, [])
         
         elif 'keep' in user_lower:
-            # ✅ FIX: Create the new incident first, then ask which one to discuss
+            logger.info(f"User chose KEEP - creating new incident alongside: {active_incidents}")
             
-            # 1. Create the new incident
+            # Create the new incident first
             kb_result = kb_service.search_kb(pending_query)
             new_incident_id = None
             
             if kb_result['best_match']:
-                # Create new incident with KB match
                 new_incident_id = generate_incident_id()
                 best_match = kb_result['best_match']
                 
@@ -712,7 +876,7 @@ class IncidentService:
                     'is_new_kb_entry': False,
                     'needs_kb_approval': False,
                     'requires_kb_addition': False,
-                    'admin_message': '',  # Add empty admin message field
+                    'admin_message': '',
                     'created_on': datetime.utcnow(),
                     'updated_on': datetime.utcnow()
                 }
@@ -721,7 +885,6 @@ class IncidentService:
                 self.add_incident_to_session(session_id, new_incident_id)
                 
             else:
-                # Create new incident without KB match
                 analysis = llm_service.analyze_technical_issue(pending_query, conversation_history)
                 
                 if analysis.get('is_technical_issue'):
@@ -744,7 +907,7 @@ class IncidentService:
                         'is_new_kb_entry': True,
                         'needs_kb_approval': True,
                         'requires_kb_addition': True,
-                        'admin_message': '',  # Add empty admin message field
+                        'admin_message': '',
                         'created_on': datetime.utcnow(),
                         'updated_on': datetime.utcnow()
                     }
@@ -752,32 +915,24 @@ class IncidentService:
                     mongo_client.create_incident(incident_data)
                     self.add_incident_to_session(session_id, new_incident_id)
             
-            # 2. Get updated list of active incidents (now includes the new one)
+            # Get updated session with both incidents
             updated_session = mongo_client.get_session(session_id)
             all_incidents = updated_session.get('active_incidents', [])
             
-            # 3. Build incident list with descriptions
-            incident_details = []
-            for inc_id in all_incidents:
-                inc = mongo_client.get_incident_by_id(inc_id)
-                if inc:
-                    issue_desc = inc.get('user_demand', 'Unknown issue')[:60]
-                    incident_details.append(f"• **{inc_id}** - {issue_desc}")
+            # ✅ NEW: Use LLM to generate the incident selection message dynamically
+            incident_list_text = self._format_incident_list(all_incidents)
             
-            incidents_list = "\n".join(incident_details)
-            
-            # 4. Ask which incident to discuss
-            response = (f"✅ Both incidents are now active and being tracked.\n\n"
-                    f"**Your Active Incidents:**\n{incidents_list}\n\n"
-                    f"Please provide the **Incident ID** you want to discuss:\n"
-                    f"(Example: {all_incidents[0] if all_incidents else 'INC20251022150744'})")
+            response = llm_service.generate_incident_selection_message(
+                incident_list_text,
+                all_incidents[0] if all_incidents else 'INC20251022150744'
+            )
             
             self.update_session_context(session_id, user_input, response)
             
-            # Store state that we're waiting for incident ID selection
+            # Clear the pending query and set awaiting response
             mongo_client.update_session(session_id, {
                 'awaiting_response': 'incident_id_selection',
-                'pending_new_incident_query': None  # Clear since we created it
+                'pending_new_incident_query': None
             })
             
             return {
@@ -789,11 +944,10 @@ class IncidentService:
             }
         
         else:
-            # User didn't say keep or ignore - ask again
-            response = "I'm sorry, I didn't understand. Please reply with:\n\n**KEEP** - to keep the previous incident open\n**IGNORE** - to close the previous incident and focus on the new issue"
+            # User didn't say KEEP or IGNORE clearly
+            response = llm_service.generate_keep_ignore_clarification()
             self.update_session_context(session_id, user_input, response)
             
-            # Restore awaiting response state
             mongo_client.update_session(session_id, {
                 'awaiting_response': 'keep_or_ignore',
                 'pending_new_incident_query': pending_query
@@ -811,26 +965,55 @@ class IncidentService:
                 ]
             }
 
+    def _is_answer_to_error_question(self, user_input: str, current_incident: Dict) -> bool:
+        """Check if user is answering an error message question"""
+        user_lower = user_input.lower().strip()
+        
+        # Get the last question asked
+        conversation = current_incident.get('conversation_history', [])
+        last_question = ""
+        for msg in reversed(conversation):
+            if msg.get('role') == 'assistant':
+                last_question = msg.get('content', '').lower()
+                break
+        
+        # Check if last question was about errors
+        is_error_question = any(word in last_question for word in ['error', 'error code', 'error message'])
+        
+        # Check if user is saying "no error" or similar
+        is_no_error_response = any(phrase in user_lower for phrase in [
+            'no error', 'no errors', 'none', 'nothing', 'not seeing', "don't see", 
+            'no message', 'no code', 'nope', "doesn't show"
+        ])
+        
+        return is_error_question and is_no_error_response
+
+    
+    def _format_incident_list(self, incident_ids: List[str]) -> str:
+        """Format incident list - one per line with bullet"""
+        incident_lines = []
+        
+        for inc_id in incident_ids:
+            inc = mongo_client.get_incident_by_id(inc_id)
+            if inc:
+                issue_desc = inc.get('user_demand', 'Unknown issue')
+                # ✅ Format: • INC20251026125046 - outlook is not working
+                incident_lines.append(f"• {inc_id} - {issue_desc}")
+        
+        return "\n".join(incident_lines)
+    
     def _handle_incident_selection(self, user_input: str, session_id: str, conversation_history: List[Dict], active_incidents: List[str]) -> Dict[str, Any]:
         """Handle incident ID selection after user chose KEEP"""
-        
-        # Extract incident ID from user input
         incident_id_match = re.search(r'INC\d+', user_input)
         
         if not incident_id_match:
-            # Build incident list again for retry
-            incident_details = []
-            for inc_id in active_incidents:
-                inc = mongo_client.get_incident_by_id(inc_id)
-                if inc:
-                    issue_desc = inc.get('user_demand', 'Unknown issue')[:60]
-                    incident_details.append(f"• **{inc_id}** - {issue_desc}")
+            # ✅ Use dynamic formatting
+            incident_list_text = self._format_incident_list(active_incidents)
             
-            incidents_list = "\n".join(incident_details)
-            
-            response = (f"I couldn't find a valid Incident ID in your message.\n\n"
-                    f"**Your Active Incidents:**\n{incidents_list}\n\n"
-                    f"Please provide the Incident ID (e.g., {active_incidents[0] if active_incidents else 'INC20251022150744'}):")
+            response = llm_service.generate_incident_selection_retry_message(
+                incident_list_text,
+                active_incidents[0] if active_incidents else 'INC20251022150744'
+            )
             
             self.update_session_context(session_id, user_input, response)
             return {
@@ -841,8 +1024,6 @@ class IncidentService:
             }
         
         selected_incident_id = incident_id_match.group()
-        
-        # Check if this incident exists
         incident = mongo_client.get_incident_by_id(selected_incident_id)
         
         if not incident:
@@ -855,22 +1036,16 @@ class IncidentService:
                 'status': 'awaiting_incident_selection'
             }
         
-        # Clear awaiting state
         mongo_client.update_session(session_id, {
             'awaiting_response': None
         })
         
-        # Continue with the selected incident using _continue_incident
         if incident.get('status') == 'pending_info':
-            # Use the _continue_incident method to properly continue
             logger.info(f"Continuing with incident {selected_incident_id}")
-            
-            # Create a dummy user input to trigger continuation
             dummy_input = "continue"
             return self._continue_incident(incident, dummy_input, session_id, conversation_history)
         
         else:
-            # Incident is not pending info
             response = f"📋 **{selected_incident_id}** - Status: **{incident.get('status')}**\n\n"
             
             if incident.get('status') == 'open':
@@ -890,22 +1065,20 @@ class IncidentService:
         
     def _handle_new_incident(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle creating a new incident"""
-        # Search KB
+        # Search KB for matching entry
         kb_result = kb_service.search_kb(user_input)
         
         if kb_result['best_match']:
-            # Found matching KB entry
             return self._create_new_incident(user_input, session_id, conversation_history, kb_result)
         else:
-            # No KB match - analyze with LLM
+            # Analyze if it's a technical issue
             analysis = llm_service.analyze_technical_issue(user_input, conversation_history)
             
             if analysis.get('is_technical_issue'):
-                # New technical issue without KB match - needs admin approval
                 return self._create_new_incident_without_kb(user_input, session_id, conversation_history, analysis)
             else:
-                # Not a technical issue
-                response = llm_service.handle_general_query(user_input, conversation_history)
+                # Not a technical issue - ask for clarification
+                response = llm_service.generate_not_technical_issue_response(user_input, conversation_history)
                 self.update_session_context(session_id, user_input, response)
                 return {
                     'message': response,
@@ -929,10 +1102,8 @@ class IncidentService:
             best_match = kb_result['best_match']
             incident_id = generate_incident_id()
             
-            # Get default admin message for new incident
             default_message = self._get_default_admin_message('pending_info')
             
-            # Create incident
             incident_data = {
                 'incident_id': incident_id,
                 'user_demand': user_input,
@@ -948,7 +1119,7 @@ class IncidentService:
                 'is_new_kb_entry': False,
                 'needs_kb_approval': False,
                 'requires_kb_addition': False,
-                'admin_message': default_message,  # Set default message
+                'admin_message': default_message,
                 'created_on': datetime.utcnow(),
                 'updated_on': datetime.utcnow()
             }
@@ -956,7 +1127,6 @@ class IncidentService:
             mongo_client.create_incident(incident_data)
             self.add_incident_to_session(session_id, incident_id)
             
-            # Generate first question
             question = llm_service.generate_kb_question(
                 best_match,
                 user_input,
@@ -965,12 +1135,10 @@ class IncidentService:
                 conversation_history
             )
             
-            # Update incident with first question
             incident_data['conversation_history'].append({'role': 'user', 'content': user_input})
             incident_data['conversation_history'].append({'role': 'assistant', 'content': question})
             mongo_client.update_incident(incident_id, {'conversation_history': incident_data['conversation_history']})
             
-            # Update session context
             self.update_session_context(session_id, user_input, question)
             
             return {
@@ -988,6 +1156,7 @@ class IncidentService:
                 'incident_id': None,
                 'status': 'error'
             }
+
     def _create_new_incident_without_kb(self, user_input: str, session_id: str, conversation_history: List[Dict], analysis: Dict) -> Dict[str, Any]:
         """Create new incident without KB match (needs admin approval)"""
         try:
@@ -996,10 +1165,8 @@ class IncidentService:
             required_info = analysis.get('required_info', [])
             questions = analysis.get('clarifying_questions', [])
             
-            # Get default admin message for new incident
             default_message = self._get_default_admin_message('pending_info')
             
-            # Create incident
             incident_data = {
                 'incident_id': incident_id,
                 'user_demand': user_input,
@@ -1015,7 +1182,7 @@ class IncidentService:
                 'is_new_kb_entry': True,
                 'needs_kb_approval': True,
                 'requires_kb_addition': True,
-                'admin_message': default_message,  # Set default message
+                'admin_message': default_message,
                 'created_on': datetime.utcnow(),
                 'updated_on': datetime.utcnow()
             }
@@ -1023,18 +1190,15 @@ class IncidentService:
             mongo_client.create_incident(incident_data)
             self.add_incident_to_session(session_id, incident_id)
             
-            # Generate first question using LLM
             if questions:
                 question = questions[0]
             else:
                 question = f"I understand you're experiencing an issue with: {user_input}. Can you provide more details about this problem?"
             
-            # Update incident with first question
             incident_data['conversation_history'].append({'role': 'user', 'content': user_input})
             incident_data['conversation_history'].append({'role': 'assistant', 'content': question})
             mongo_client.update_incident(incident_id, {'conversation_history': incident_data['conversation_history']})
             
-            # Update session context
             self.update_session_context(session_id, user_input, question)
             
             logger.info(f"New incident created needing KB approval: {incident_id}")
@@ -1056,102 +1220,91 @@ class IncidentService:
             }
 
     def _continue_incident(self, incident: Dict, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
-        """Continue with existing pending incident - FIXED VERSION"""
+        """Continue with existing pending incident"""
         try:
             incident_id = incident['incident_id']
             collected_info = incident.get('collected_info', {})
             missing_info = incident.get('missing_info', [])
             incident_conversation = incident.get('conversation_history', [])
             
-            # Check if all info is collected
             if not missing_info:
                 return self._finalize_incident(incident_id, session_id, collected_info, incident_conversation, user_input)
             
-            # Get the current field we're trying to collect
             current_field = missing_info[0] if missing_info else ""
-            
-            # Add user message to conversation
             incident_conversation.append({'role': 'user', 'content': user_input})
             
-            # ✅ SIMPLIFIED EXTRACTION - Direct acceptance for short answers
             user_lower = user_input.lower().strip()
             extracted_value = None
             is_valid = False
             
-            # Check for common simple answers that should be accepted
             if current_field:
                 field_lower = current_field.lower()
                 
-                # Operating System detection
-                if 'operating system' in field_lower or 'os' in field_lower:
+                # ✅ FIX: Handle error message questions specially
+                if 'error' in field_lower and ('message' in field_lower or 'code' in field_lower):
+                    # Check if user is saying "no error"
+                    if any(phrase in user_lower for phrase in [
+                        'no error', 'no errors', 'none', 'nothing', 'not seeing', "don't see",
+                        'no message', 'no code', 'nope', "doesn't show", "didnt see"
+                    ]):
+                        extracted_value = "No error message"
+                        is_valid = True
+                        logger.info(f"✅ Accepted 'no error' response: {user_input}")
+                    elif len(user_input) > 5:
+                        extracted_value = user_input.strip()
+                        is_valid = True
+                        logger.info(f"✅ Error message provided: {extracted_value}")
+                
+                elif 'operating system' in field_lower or 'os' in field_lower:
                     if any(os in user_lower for os in ['windows', 'mac', 'linux', 'macos', 'ubuntu', 'ios', 'android']):
                         extracted_value = user_input.strip()
                         is_valid = True
                         logger.info(f"✅ Direct OS match: {extracted_value}")
                 
-                # VPN Client detection
                 elif 'vpn' in field_lower and 'client' in field_lower:
                     if any(vpn in user_lower for vpn in ['cisco', 'anyconnect', 'globalprotect', 'forticlient', 'pulse']):
                         extracted_value = user_input.strip()
                         is_valid = True
                         logger.info(f"✅ Direct VPN client match: {extracted_value}")
                 
-                # Network type detection
                 elif 'network' in field_lower:
                     if any(net in user_lower for net in ['home', 'office', 'public', 'wifi', 'ethernet']):
                         extracted_value = user_input.strip()
                         is_valid = True
                         logger.info(f"✅ Direct network match: {extracted_value}")
                 
-                # Error message/code detection
-                elif 'error' in field_lower:
-                    if any(word in user_lower for word in ['no error', 'none', 'no', "don't see", 'not seeing']):
-                        extracted_value = "No error message"
-                        is_valid = True
-                        logger.info(f"✅ No error message response")
-                    elif len(user_input) > 5:  # Actual error message
-                        extracted_value = user_input.strip()
-                        is_valid = True
-                        logger.info(f"✅ Error message provided: {extracted_value}")
-                
-                # Account type detection
                 elif 'account' in field_lower:
                     if any(acc in user_lower for acc in ['office365', 'exchange', 'imap', 'gmail', 'outlook']):
                         extracted_value = user_input.strip()
                         is_valid = True
                         logger.info(f"✅ Account type match: {extracted_value}")
                 
-                # Email/User ID detection
                 elif 'email' in field_lower or 'user id' in field_lower:
                     if '@' in user_input or len(user_input) > 3:
                         extracted_value = user_input.strip()
                         is_valid = True
                         logger.info(f"✅ Email/UserID provided: {extracted_value}")
                 
-                # Generic short answer (1-5 words) - likely valid
                 elif len(user_input.split()) <= 5 and len(user_input) > 1:
                     extracted_value = user_input.strip()
                     is_valid = True
                     logger.info(f"✅ Short specific answer accepted: {extracted_value}")
             
-            # If we got a valid extraction, save it and move to next question
             if is_valid and extracted_value:
                 collected_info[current_field] = extracted_value
                 missing_info.pop(0)
                 logger.info(f"✅ Successfully collected '{current_field}': {extracted_value}")
                 
-                # Update incident in database
                 mongo_client.update_incident(incident_id, {
                     'conversation_history': incident_conversation,
                     'collected_info': collected_info,
                     'missing_info': missing_info
                 })
                 
-                # Check if all info is now collected
                 if not missing_info:
                     return self._finalize_incident(incident_id, session_id, collected_info, incident_conversation, user_input)
                 
-                # Ask next question
+                # Generate next question
                 if incident.get('kb_id'):
                     kb_entry = kb_service.get_kb_entry(incident['kb_id'])
                     if kb_entry:
@@ -1174,8 +1327,6 @@ class IncidentService:
                         next_question = f"Can you provide information about: {missing_info[0]}?"
                 
                 incident_conversation.append({'role': 'assistant', 'content': next_question})
-                
-                # Update incident with next question
                 mongo_client.update_incident(incident_id, {
                     'conversation_history': incident_conversation
                 })
@@ -1190,10 +1341,8 @@ class IncidentService:
                 }
             
             else:
-                # ❌ User's response doesn't match what we're looking for
                 logger.warning(f"⚠️ Invalid response for '{current_field}': {user_input}")
                 
-                # Get the last question
                 last_question = ""
                 for msg in reversed(incident_conversation):
                     if msg.get('role') == 'assistant':
@@ -1226,17 +1375,13 @@ class IncidentService:
                 'incident_id': incident.get('incident_id'),
                 'status': 'error'
             }
+
     
     def _finalize_incident(self, incident_id: str, session_id: str, collected_info: Dict, conversation: List, user_input: str) -> Dict:
         """Finalize and close incident collection"""
-        # Get default message for open status
         default_message = self._get_default_admin_message('open')
         
-        final_message = (f"Thank you for providing all the necessary information. "
-                        f"Your incident has been created successfully.\n\n"
-                        f"Incident ID: {incident_id}\n\n"
-                        f"Our IT team will review your issue and get back to you soon.")
-        
+        final_message = llm_service.generate_incident_completion_message(incident_id)
         conversation.append({'role': 'assistant', 'content': final_message})
         
         mongo_client.update_incident(incident_id, {
@@ -1244,7 +1389,7 @@ class IncidentService:
             'conversation_history': conversation,
             'collected_info': collected_info,
             'missing_info': [],
-            'admin_message': default_message,  # Update to open status message
+            'admin_message': default_message,
             'completed_at': datetime.utcnow()
         })
         
@@ -1257,264 +1402,14 @@ class IncidentService:
             'status': 'open'
         }
     
-    # ========== ADMIN METHODS ==========
-    
-    def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
-        """Get incident by ID"""
-        return mongo_client.get_incident_by_id(incident_id)
-    
-    def get_all_incidents(self) -> List[Dict[str, Any]]:
-        """Get all incidents sorted by creation date (newest first)"""
-        incidents = mongo_client.get_all_incidents()
-        logger.info(f"Retrieved {len(incidents)} incidents from database")
-        
-        for incident in incidents:
-            # Ensure incident_type field exists for display
-            if 'incident_type' not in incident:
-                user_demand = incident.get('user_demand', 'IT Issue')
-                if len(user_demand) > 50:
-                    incident['incident_type'] = user_demand[:50] + '...'
-                else:
-                    incident['incident_type'] = user_demand
-            
-            # Ensure use_case field exists (for admin dashboard)
-            if 'use_case' not in incident:
-                incident['use_case'] = incident.get('user_demand', 'Unknown Issue')
-            
-            # Ensure needs_kb_approval field exists
-            if 'needs_kb_approval' not in incident:
-                incident['needs_kb_approval'] = False
-            
-            # Ensure is_new_kb_entry field exists  
-            if 'is_new_kb_entry' not in incident:
-                incident['is_new_kb_entry'] = False
-            
-            # Ensure admin_message field exists
-            if 'admin_message' not in incident:
-                incident['admin_message'] = ''
-        
-        # Return as-is (already sorted by MongoDB)
-        return incidents
-    
-    def get_incidents_by_status(self, status: str) -> List[Dict[str, Any]]:
-        """Get incidents by status"""
-        incidents = mongo_client.get_incidents_by_filter({'status': status})
-        for incident in incidents:
-            if 'incident_type' not in incident:
-                incident['incident_type'] = incident.get('user_demand', 'IT Issue')[:50] + '...' if len(incident.get('user_demand', '')) > 50 else incident.get('user_demand', 'IT Issue')
-        return incidents
-    
-    def get_incidents_needing_approval(self) -> List[Dict[str, Any]]:
-        """Get incidents needing KB approval"""
-        incidents = mongo_client.get_incidents_by_filter({
-            '$or': [
-                {'needs_kb_approval': True},
-                {'requires_kb_addition': True},
-                {'is_new_kb_entry': True}
-            ]
-        })
-        for incident in incidents:
-            if 'incident_type' not in incident:
-                incident['incident_type'] = incident.get('user_demand', 'IT Issue')[:50] + '...' if len(incident.get('user_demand', '')) > 50 else incident.get('user_demand', 'IT Issue')
-        return incidents
-    
-    def resolve_incident(self, incident_id: str, solution_steps: list = None, resolution_notes: str = None) -> bool:
-        """Mark incident as resolved with solution steps"""
-        try:
-            update_data = {
-                'status': 'resolved',
-                'resolved_on': datetime.utcnow()
-            }
-            
-            if solution_steps:
-                solution_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(solution_steps)])
-                update_data['solution_provided'] = solution_text
-            
-            if resolution_notes:
-                update_data['resolution_notes'] = resolution_notes
-            
-            return mongo_client.update_incident(incident_id, update_data)
-        except Exception as e:
-            logger.error(f"Error resolving incident: {e}")
-            return False
-    
-    # ✅ ADD MISSING METHOD: update_incident_status
-    def update_incident_status(self, incident_id: str, status: str) -> bool:
-        """Update incident status and set appropriate admin message"""
-        try:
-            valid_statuses = ['pending_info', 'open', 'resolved', 'closed']
-            if status not in valid_statuses:
-                logger.error(f"Invalid status: {status}. Valid statuses: {valid_statuses}")
-                return False
-            
-            # Get the current incident to check if we should preserve custom messages
-            current_incident = mongo_client.get_incident_by_id(incident_id)
-            current_admin_message = current_incident.get('admin_message', '') if current_incident else ''
-            
-            update_data = {'status': status}
-            
-            # Only set default message for pending_info and open if no custom message exists
-            if status in ['pending_info', 'open'] and (not current_admin_message or current_admin_message in [
-                'Still need some information.',
-                'All information collected. Our team will contact you soon.',
-                'Incident has been resolved successfully.',
-                'Incident has been closed.'
-            ]):
-                update_data['admin_message'] = self._get_default_admin_message(status)
-            elif status in ['resolved', 'closed'] and (not current_admin_message or current_admin_message in [
-                'Still need some information.',
-                'All information collected. Our team will contact you soon.',
-                'Incident has been resolved successfully.',
-                'Incident has been closed.'
-            ]):
-                # For resolved/closed, set default but allow admin to customize later
-                update_data['admin_message'] = self._get_default_admin_message(status)
-            
-            # Add timestamp for resolved/closed status
-            if status in ['resolved', 'closed']:
-                update_data[f'{status}_on'] = datetime.utcnow()
-            
-            success = mongo_client.update_incident(incident_id, update_data)
-            
-            if success:
-                logger.info(f"Successfully updated incident {incident_id} status to {status}")
-            else:
-                logger.error(f"Failed to update incident {incident_id} status")
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"Error updating incident status: {e}")
-            return False
-    def add_incident_to_kb(self, incident_id: str, use_case: str, required_info: list, solution_steps: list) -> bool:
-        """Add incident type to knowledge base and kb_data.txt file"""
-        try:
-            incident = mongo_client.get_incident_by_id(incident_id)
-            
-            if not incident:
-                logger.error(f"Incident not found: {incident_id}")
-                return False
-            
-            logger.info(f"Adding incident {incident_id} to KB with use case: {use_case}")
-            
-            # Create KB entry
-            kb_id = kb_service.add_new_kb_entry(
-                use_case=use_case,
-                required_info=required_info,
-                solution_steps=solution_steps
-            )
-            
-            if kb_id:
-                # Update incident
-                update_data = {
-                    'requires_kb_addition': False,
-                    'needs_kb_approval': False,
-                    'is_new_kb_entry': False,
-                    'kb_id': kb_id,
-                    'incident_type': use_case
-                }
-                
-                success = mongo_client.update_incident(incident_id, update_data)
-                
-                if success:
-                    # Append to kb_data.txt file
-                    kb_service.append_to_kb_file(kb_id, use_case, required_info, solution_steps)
-                    logger.info(f"Successfully added incident {incident_id} to KB as {kb_id}")
-                    return True
-                else:
-                    logger.error(f"Failed to update incident {incident_id} after KB creation")
-                    return False
-            else:
-                logger.error(f"Failed to create KB entry for incident {incident_id}")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Error adding incident to KB: {e}")
-            return False
-    
-    def approve_kb_and_add_solution(self, incident_id: str, solution_steps: str) -> bool:
-        """Approve KB entry and add solution steps"""
-        try:
-            incident = mongo_client.get_incident_by_id(incident_id)
-            
-            if not incident:
-                logger.error(f"Incident not found: {incident_id}")
-                return False
-            
-            logger.info(f"Approving incident {incident_id} with solution: {solution_steps}")
-            
-            update_data = {
-                'solution_steps': solution_steps,
-                'needs_kb_approval': False,
-                'requires_kb_addition': False
-            }
-            
-            success = mongo_client.update_incident(incident_id, update_data)
-            
-            if success and incident.get('is_new_kb_entry'):
-                use_case = incident.get('user_demand', 'Unknown Issue')
-                required_info = incident.get('required_info', [])
-                
-                logger.info(f"Creating new KB entry for: {use_case}")
-                
-                new_kb_id = kb_service.add_new_kb_entry(
-                    use_case=use_case,
-                    required_info=required_info,
-                    solution_steps=[solution_steps],
-                    questions=incident.get('questions', [])
-                )
-                
-                if new_kb_id:
-                    mongo_client.update_incident(incident_id, {
-                        'kb_id': new_kb_id,
-                        'is_new_kb_entry': False
-                    })
-                    
-                    # Append to kb_data.txt file
-                    kb_service.append_to_kb_file(new_kb_id, use_case, required_info, [solution_steps])
-                    logger.info(f"New KB entry created: {new_kb_id} for incident: {incident_id}")
-                    return True
-                else:
-                    logger.error("Failed to create new KB entry")
-                    return False
-            else:
-                return success
-            
-        except Exception as e:
-            logger.error(f"Error approving KB and adding solution: {e}")
-            return False
-    
-    def approve_kb_entry(self, incident_id: str, solution_steps: str) -> bool:
-        """
-        Approve KB entry and add solution steps
-        This is a wrapper method for approve_kb_and_add_solution
-        """
-        try:
-            logger.info(f"Approving KB entry for incident {incident_id}")
-            
-            # Call the existing method with the same functionality
-            return self.approve_kb_and_add_solution(incident_id, solution_steps)
-            
-        except Exception as e:
-            logger.error(f"Error approving KB entry: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-    
     def _handle_ask_incident_type(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle when user says 'create incident' without describing the problem"""
-        response = ("I'd be happy to help you create an incident. Could you please describe the technical issue you're experiencing?\n\n"
-                    "For example:\n"
-                    "• Email problems (Outlook not opening, can't send emails)\n"
-                    "• Network issues (VPN not connecting, WiFi problems)\n"
-                    "• Software installation requests\n"
-                    "• Password reset needed\n"
-                    "• System performance issues\n\n"
-                    "Please tell me what problem you're facing.")
+        # ✅ Use LLM to generate confirmation and ask for issue type
+        response = llm_service.generate_ask_incident_type_response(user_input, conversation_history)
         
         self.update_session_context(session_id, user_input, response)
         
-        # Mark that we're waiting for issue description
+        # ✅ Set awaiting response so next input will be treated as issue description
         mongo_client.update_session(session_id, {
             'awaiting_response': 'issue_description'
         })
@@ -1526,17 +1421,14 @@ class IncidentService:
             'status': 'awaiting_issue_description'
         }
     
-    # ✅ NEW METHOD: Check if user is asking about previous solution
     def _is_asking_about_previous_solution(self, user_input: str) -> bool:
         """Check if user is asking about a previous incident/solution"""
         keywords = ['previous', 'last', 'earlier', 'before', 'my incident', 'solution', 'what happened', 'status', 'view solution', 'continue my', 'old incident']
         user_lower = user_input.lower()
         return any(keyword in user_lower for keyword in keywords)
 
-    # ✅ NEW METHOD: Handle previous solution queries
     def _handle_previous_solution_query(self, user_input: str, session_id: str, conversation_history: List[Dict]) -> Dict[str, Any]:
         """Handle queries about previous solutions"""
-        # Check if user mentioned incident ID
         incident_id_match = re.search(r'INC\d+', user_input)
         
         if incident_id_match:
@@ -1544,12 +1436,10 @@ class IncidentService:
             incident = mongo_client.get_incident_by_id(incident_id)
             
             if incident:
-                # Continue from where it stopped
                 if incident.get('status') == 'pending_info':
                     response = f"I found your incident {incident_id}. Let's continue from where we left off.\n\n"
                     return self._continue_incident(incident, user_input, session_id, conversation_history)
                 else:
-                    # Show incident details
                     incident_details = {
                         'incident_id': incident.get('incident_id'),
                         'status': incident.get('status'),
@@ -1578,7 +1468,6 @@ class IncidentService:
                     'status': 'not_found'
                 }
         else:
-            # Ask for incident ID
             response = "I'd be happy to help you with a previous incident. Please provide the Incident ID (e.g., INC20251022150744):"
             self.update_session_context(session_id, user_input, response)
             return {
@@ -1588,17 +1477,152 @@ class IncidentService:
                 'status': 'awaiting_incident_id'
             }
         
-    # Add this method to the IncidentService class
     def _get_default_admin_message(self, status: str) -> str:
         """Get default admin message based on incident status"""
-        default_messages = {
-            'pending_info': 'Still need some information.',
-            'open': 'All information collected. Our team will contact you soon.',
-            'resolved': 'Incident has been resolved successfully.',
-            #'closed': 'Incident has been closed.'
-        }
-        return default_messages.get(status, '')
+        return llm_service.generate_default_admin_message(status)
 
+    # Admin methods
+    def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        return mongo_client.get_incident_by_id(incident_id)
+    
+    def get_all_incidents(self) -> List[Dict[str, Any]]:
+        incidents = mongo_client.get_all_incidents()
+        logger.info(f"Retrieved {len(incidents)} incidents from database")
+        
+        for incident in incidents:
+            if 'incident_type' not in incident:
+                user_demand = incident.get('user_demand', 'IT Issue')
+                if len(user_demand) > 50:
+                    incident['incident_type'] = user_demand[:50] + '...'
+                else:
+                    incident['incident_type'] = user_demand
+            
+            if 'use_case' not in incident:
+                incident['use_case'] = incident.get('user_demand', 'Unknown Issue')
+            
+            if 'needs_kb_approval' not in incident:
+                incident['needs_kb_approval'] = False
+            
+            if 'is_new_kb_entry' not in incident:
+                incident['is_new_kb_entry'] = False
+            
+            if 'admin_message' not in incident:
+                incident['admin_message'] = ''
+        
+        return incidents
+    
+    def get_incidents_by_status(self, status: str) -> List[Dict[str, Any]]:
+        incidents = mongo_client.get_incidents_by_filter({'status': status})
+        for incident in incidents:
+            if 'incident_type' not in incident:
+                incident['incident_type'] = incident.get('user_demand', 'IT Issue')[:50] + '...' if len(incident.get('user_demand', '')) > 50 else incident.get('user_demand', 'IT Issue')
+        return incidents
+    
+    def get_incidents_needing_approval(self) -> List[Dict[str, Any]]:
+        incidents = mongo_client.get_incidents_by_filter({
+            '$or': [
+                {'needs_kb_approval': True},
+                {'requires_kb_addition': True},
+                {'is_new_kb_entry': True}
+            ]
+        })
+        for incident in incidents:
+            if 'incident_type' not in incident:
+                incident['incident_type'] = incident.get('user_demand', 'IT Issue')[:50] + '...' if len(incident.get('user_demand', '')) > 50 else incident.get('user_demand', 'IT Issue')
+        return incidents
+    
+    def update_incident_status(self, incident_id: str, status: str) -> bool:
+        try:
+            valid_statuses = ['pending_info', 'open', 'resolved']
+            if status not in valid_statuses:
+                logger.error(f"Invalid status: {status}. Valid statuses: {valid_statuses}")
+                return False
+            
+            current_incident = mongo_client.get_incident_by_id(incident_id)
+            current_admin_message = current_incident.get('admin_message', '') if current_incident else ''
+            
+            update_data = {'status': status}
+            
+            if status in ['pending_info', 'open'] and (not current_admin_message or current_admin_message in [
+                'Still need some information.',
+                'All information collected. Our team will contact you soon.',
+                'Incident has been resolved successfully.'
+            ]):
+                update_data['admin_message'] = self._get_default_admin_message(status)
+            elif status == 'resolved' and (not current_admin_message or current_admin_message in [
+                'Still need some information.',
+                'All information collected. Our team will contact you soon.',
+                'Incident has been resolved successfully.'
+            ]):
+                update_data['admin_message'] = self._get_default_admin_message(status)
+            
+            if status == 'resolved':
+                update_data['resolved_on'] = datetime.utcnow()
+            
+            success = mongo_client.update_incident(incident_id, update_data)
+            
+            if success:
+                logger.info(f"Successfully updated incident {incident_id} status to {status}")
+            else:
+                logger.error(f"Failed to update incident {incident_id} status")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error updating incident status: {e}")
+            return False
+    
+    def approve_kb_entry(self, incident_id: str, solution_steps: str) -> bool:
+        try:
+            logger.info(f"Approving KB entry for incident {incident_id}")
+            
+            incident = mongo_client.get_incident_by_id(incident_id)
+            
+            if not incident:
+                logger.error(f"Incident not found: {incident_id}")
+                return False
+            
+            update_data = {
+                'solution_steps': solution_steps,
+                'needs_kb_approval': False,
+                'requires_kb_addition': False
+            }
+            
+            success = mongo_client.update_incident(incident_id, update_data)
+            
+            if success and incident.get('is_new_kb_entry'):
+                use_case = incident.get('user_demand', 'Unknown Issue')
+                required_info = incident.get('required_info', [])
+                
+                logger.info(f"Creating new KB entry for: {use_case}")
+                
+                new_kb_id = kb_service.add_new_kb_entry(
+                    use_case=use_case,
+                    required_info=required_info,
+                    solution_steps=[solution_steps],
+                    questions=incident.get('questions', [])
+                )
+                
+                if new_kb_id:
+                    mongo_client.update_incident(incident_id, {
+                        'kb_id': new_kb_id,
+                        'is_new_kb_entry': False
+                    })
+                    
+                    kb_service.append_to_kb_file(new_kb_id, use_case, required_info, [solution_steps])
+                    logger.info(f"New KB entry created: {new_kb_id} for incident: {incident_id}")
+                    return True
+                else:
+                    logger.error("Failed to create new KB entry")
+                    return False
+            else:
+                return success
+            
+        except Exception as e:
+            logger.error(f"Error approving KB entry: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
 
 # Global incident service instance
 incident_service = IncidentService()
