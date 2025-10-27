@@ -1,9 +1,28 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
-pymongo==4.6.0
-chromadb==0.4.18
+# ---- Core Framework ----
+fastapi==0.115.5
+uvicorn==0.30.6
+
+# ---- Data & ORM ----
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.9
+
+# ---- Environment & Utils ----
+python-dotenv==1.0.1
+typing-extensions==4.12.2
+
+# ---- AI / LLM ----
 google-generativeai==0.3.1
-python-dotenv==1.0.0
-python-multipart==0.0.6
+chromadb==0.4.24
+
+# ---- Optional: If you use sentence transformers or embeddings ----
+sentence-transformers==2.7.0
+
+# ---- Optional: For background operations ----
+anyio==3.7.1
+
+# ---- Validation ----
+pydantic==2.9.2
+pydantic-core==2.23.4
+
+# ---- ASGI middleware ----
+starlette==0.37.2
