@@ -2,13 +2,14 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
 # Add this function at the top of your files
 def get_ist_time():
     """Get current time in India Standard Time (IST)"""
-    ist = pytz.timezone('Asia/Kolkata')
-    return datetime.now(ist)
+    # ist = pytz.timezone('Asia/Kolkata')
+    # return datetime.now(ist)
+    return datetime.now(ZoneInfo('Asia/Kolkata'))
 
 class UserQuery(BaseModel):
     user_input: str
