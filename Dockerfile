@@ -2,12 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies including CA certificates for SSL
+# Install comprehensive SSL and build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     ca-certificates \
+    libssl-dev \
+    curl \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -15,7 +17,10 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Remove build dependencies (keep ca-certificates)
+# Install additional Python SSL packages
+RUN pip install --no-cache-dir pyopenssl cryptography
+
+# Remove build dependencies but keep SSL packages
 RUN apt-get remove -y gcc g++ && \
     apt-get autoremove -y && \
     apt-get clean && \

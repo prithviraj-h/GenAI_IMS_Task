@@ -32,7 +32,7 @@ class MongoDBClient:
             self.client = MongoClient(
                 settings.MONGO_URI,
                 tls=True,
-                tlsAllowInvalidCertificates=False,
+                tlsAllowInvalidCertificates=True,
                 retryWrites=True,
                 w='majority',
                 serverSelectionTimeoutMS=15000,
