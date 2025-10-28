@@ -28,24 +28,19 @@ class MongoDBClient:
     def connect(self):
         """Connect to MongoDB with SSL support"""
         try:
-            # For MongoDB Atlas, use SSL/TLS connection
-            if "mongodb+srv" in settings.MONGO_URI:
-                self.client = MongoClient(
-                    settings.MONGO_URI,
-                    tls=settings.MONGO_TLS,
-                    tlsAllowInvalidCertificates=settings.MONGO_TLS_ALLOW_INVALID_CERTIFICATES,
-                    retryWrites=True,
-                    w='majority',
-                    serverSelectionTimeoutMS=10000,
-                    connectTimeoutMS=10000
-                )
-            else:
-                # For local MongoDB
-                self.client = MongoClient(
-                    settings.MONGO_URI,
-                    serverSelectionTimeoutMS=10000,
-                    connectTimeoutMS=10000
-                )
+            # For MongoDB Atlas with SSL fix
+            self.client = MongoClient(
+                settings.MONGO_URI,
+                tls=True,
+                tlsAllowInvalidCertificates=False,
+                # Force TLS 1.2 (common fix for TLS issues)
+                tlsVersion='TLSv1_2',
+                retryWrites=True,
+                w='majority',
+                serverSelectionTimeoutMS=15000,
+                connectTimeoutMS=15000,
+                socketTimeoutMS=20000
+            )
             
             # Test connection
             self.client.admin.command('ping')
@@ -60,11 +55,8 @@ class MongoDBClient:
             
             logger.info("✅ Connected to MongoDB successfully")
             
-        except ConnectionFailure as e:
-            logger.error(f"❌ Failed to connect to MongoDB: {e}")
-            raise
         except Exception as e:
-            logger.error(f"❌ Unexpected error connecting to MongoDB: {e}")
+            logger.error(f"❌ Failed to connect to MongoDB: {e}")
             raise
     
     def _create_indexes(self):
