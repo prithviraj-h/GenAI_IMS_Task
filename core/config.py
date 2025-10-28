@@ -19,9 +19,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     # Embedding settings
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-    EMBEDDING_DIMENSION: int = 384
-    
+    # EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # EMBEDDING_DIMENSION: int = 128
+    # Jina AI Embeddings Configuration
+    JINA_API_KEY: str = os.getenv("JINA_API_KEY", "jina_f150959bc77a423a91d8f0e06c67fed54c5gR4NOpBdi88LOeUR6sNAhg-1_")
+    JINA_MODEL: str = "jina-embeddings-v2-base-en"
     # LLM settings
     LLM_MODEL: str = "gemini-2.0-flash"
     

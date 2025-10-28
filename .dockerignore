@@ -1,48 +1,14 @@
-## **`.dockerignore` (Critical!)**
-```
-# Databases (regenerate at runtime)
-chroma_db/
-db/chroma/
-*.sqlite3
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-
-# Development
-.git/
-.gitignore
-.env
-.venv/
-venv/
-env/
-.vscode/
-.idea/
-*.md
-README.md
-tests/
-pytest_cache/
-
-# Logs
-*.log
-logs/
-
-# OS files
-.DS_Store
-Thumbs.db
-# **And add this `.dockerignore`:**
-# ```
-chroma_db/
-db/chroma/
-__pycache__/
-*.pyc
-.git/
-.env
-venv/
-tests/
-*.md
-.vscode/
+**/__pycache__
+**/.pytest_cache
+**/.git
+**/.vscode
+**/*.log
+**/Dockerfile
+**/README.md
+**/.dockerignore
+**/test*
+**/docs
+**/examples
+**/notebooks
+**/chroma_db/**/*.bin
+**/chroma_db/chroma.sqlite3
