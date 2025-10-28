@@ -28,16 +28,16 @@ class MongoDBClient:
     def connect(self):
         """Connect to MongoDB with SSL support"""
         try:
-            # Simple connection for MongoDB Atlas
+            # Improved connection for MongoDB Atlas
             self.client = MongoClient(
                 settings.MONGO_URI,
                 tls=True,
-                tlsAllowInvalidCertificates=True,
+                # Remove tlsAllowInvalidCertificates for Atlas
                 retryWrites=True,
                 w='majority',
-                serverSelectionTimeoutMS=15000,
-                connectTimeoutMS=15000,
-                socketTimeoutMS=20000
+                serverSelectionTimeoutMS=30000,  # Increased timeout
+                connectTimeoutMS=30000,
+                socketTimeoutMS=30000
             )
             
             # Test connection

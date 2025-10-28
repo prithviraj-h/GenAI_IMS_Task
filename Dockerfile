@@ -2,14 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install comprehensive SSL and build dependencies
+# Install SSL dependencies and CA certificates
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
     ca-certificates \
-    libssl-dev \
-    curl \
+    libssl3 \
+    openssl \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,14 +15,8 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional Python SSL packages
-RUN pip install --no-cache-dir pyopenssl cryptography
-
-# Remove build dependencies but keep SSL packages
-RUN apt-get remove -y gcc g++ && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Ensure certifi is installed for SSL verification
+RUN pip install --no-cache-dir --upgrade certifi
 
 # Copy application code
 COPY api ./api
@@ -39,7 +31,8 @@ COPY main.py ./
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8000 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 EXPOSE 8000
 
