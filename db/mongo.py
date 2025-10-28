@@ -9,6 +9,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from pymongo import MongoClient, ASCENDING
+from pymongo.errors import ConnectionFailure
+from core.config import settings
+from typing import Optional, Dict, List, Any
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 class MongoDBClient:
     def __init__(self):
         self.client: Optional[MongoClient] = None
@@ -17,24 +26,57 @@ class MongoDBClient:
         self.sessions_collection = None
         
     def connect(self):
-        """Connect to MongoDB"""
+        """Connect to MongoDB with SSL support"""
         try:
-            self.client = MongoClient(settings.MONGO_URI)
+            # For MongoDB Atlas, use SSL/TLS connection
+            if "mongodb+srv" in settings.MONGO_URI:
+                self.client = MongoClient(
+                    settings.MONGO_URI,
+                    tls=settings.MONGO_TLS,
+                    tlsAllowInvalidCertificates=settings.MONGO_TLS_ALLOW_INVALID_CERTIFICATES,
+                    retryWrites=True,
+                    w='majority',
+                    serverSelectionTimeoutMS=10000,
+                    connectTimeoutMS=10000
+                )
+            else:
+                # For local MongoDB
+                self.client = MongoClient(
+                    settings.MONGO_URI,
+                    serverSelectionTimeoutMS=10000,
+                    connectTimeoutMS=10000
+                )
+            
+            # Test connection
             self.client.admin.command('ping')
+            
+            # Setup database and collections
             self.db = self.client[settings.MONGO_DB]
             self.incidents_collection = self.db[settings.INCIDENT_COLLECTION]
             self.sessions_collection = self.db[settings.SESSION_COLLECTION]
             
             # Create indexes
+            self._create_indexes()
+            
+            logger.info("✅ Connected to MongoDB successfully")
+            
+        except ConnectionFailure as e:
+            logger.error(f"❌ Failed to connect to MongoDB: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Unexpected error connecting to MongoDB: {e}")
+            raise
+    
+    def _create_indexes(self):
+        """Create necessary indexes"""
+        try:
             self.incidents_collection.create_index([("incident_id", ASCENDING)], unique=True)
             self.incidents_collection.create_index([("status", ASCENDING)])
             self.incidents_collection.create_index([("session_id", ASCENDING)])
             self.sessions_collection.create_index([("session_id", ASCENDING)], unique=True)
-            
-            logger.info("Connected to MongoDB successfully")
-        except ConnectionFailure as e:
-            logger.error(f"Failed to connect to MongoDB: {e}")
-            raise
+            logger.info("✅ Database indexes created successfully")
+        except Exception as e:
+            logger.error(f"❌ Error creating indexes: {e}")
     
     def disconnect(self):
         """Disconnect from MongoDB"""

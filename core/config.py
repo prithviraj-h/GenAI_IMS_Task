@@ -9,12 +9,14 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # MongoDB Configuration
-    MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+    MONGO_URI: str = os.getenv("MONGO_URI", "")
     MONGO_DB: str = os.getenv("MONGO_DB", "incident_management")
     INCIDENT_COLLECTION: str = os.getenv("INCIDENT_COLLECTION", "incidents")
     SESSION_COLLECTION: str = os.getenv("SESSION_COLLECTION", "sessions")
     KB_COLLECTION: str = os.getenv("KB_COLLECTION", "kb_entries")
-    
+    # SSL/TLS settings for MongoDB Atlas
+    MONGO_TLS: bool = True
+    MONGO_TLS_ALLOW_INVALID_CERTIFICATES: bool = False
     # Gemini Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
