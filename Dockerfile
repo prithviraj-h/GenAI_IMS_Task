@@ -1,22 +1,46 @@
+# Build stage
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    gcc \
+    ca-certificates \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+# Runtime stage
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install SSL dependencies and CA certificates
+# Install only runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
     openssl \
+    libgomp1 \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy pre-built wheels from builder
+COPY --from=builder /wheels /wheels
 
-# Ensure certifi is installed for SSL verification
-RUN pip install --no-cache-dir --upgrade certifi
+# Install from wheels
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --find-links=/wheels -r /wheels/* && \
+    pip install --no-cache-dir --upgrade certifi && \
+    rm -rf /wheels
 
 # Copy application code
 COPY api ./api
