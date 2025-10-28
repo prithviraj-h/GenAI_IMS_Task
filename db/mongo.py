@@ -28,13 +28,11 @@ class MongoDBClient:
     def connect(self):
         """Connect to MongoDB with SSL support"""
         try:
-            # For MongoDB Atlas with SSL fix
+            # Simple connection for MongoDB Atlas
             self.client = MongoClient(
                 settings.MONGO_URI,
                 tls=True,
                 tlsAllowInvalidCertificates=False,
-                # Force TLS 1.2 (common fix for TLS issues)
-                tlsVersion='TLSv1_2',
                 retryWrites=True,
                 w='majority',
                 serverSelectionTimeoutMS=15000,
