@@ -38,9 +38,8 @@ class LLMService:
 
     # In backend/services/llm_service.py - Update detect_intent method
 
-    def detect_intent(self, user_input: str, conversation_history: List[Dict],
-                    has_active_incident: bool, session_id: str) -> Dict[str, Any]:
-        """Detect user intent using LLM with improved context awareness"""
+    def detect_intent(self, user_input: str, conversation_history: List[Dict], has_active_incident: bool, session_id: str) -> Dict[str, Any]:
+        """Detect user intent using LLM with improved context awareness - ALWAYS returns a dict"""
         
         try:
             # Check for new issue descriptions when there's an active incident
@@ -55,13 +54,10 @@ class LLMService:
                     'install', 'password', 'login', 'access', 'connection'
                 ]
                 
-                # If user describes a clear technical issue while having active incident
                 if any(indicator in user_lower for indicator in new_issue_indicators):
-                    # Check if it's different from current context
                     is_different_issue = True
                     if conversation_history:
                         last_bot_msg = conversation_history[-1].get('content', '').lower() if conversation_history[-1].get('role') == 'assistant' else ''
-                        # If last bot message contains similar keywords, might be same issue
                         common_keywords = set(new_issue_indicators).intersection(set(last_bot_msg.split()))
                         if len(common_keywords) > 1:
                             is_different_issue = False
@@ -89,25 +85,50 @@ class LLMService:
                 is_after_greeting=is_after_greeting
             )
             
-            response = self.generate_response(prompt, temperature=0.3)
+            # ✅ FIX: Use lower temperature and add retry logic
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    response = self.generate_response(prompt, temperature=0.1)  # Lower temperature
+                    
+                    if not response or len(response.strip()) == 0:
+                        logger.warning(f"Empty response from LLM on attempt {attempt + 1}")
+                        if attempt < max_retries - 1:
+                            continue
+                        else:
+                            return self._fallback_intent_detection(user_input, has_active_incident)
+                    
+                    # Try to extract JSON
+                    json_start = response.find('{')
+                    json_end = response.rfind('}') + 1
+                    
+                    if json_start != -1 and json_end > json_start:
+                        json_str = response[json_start:json_end]
+                        intent_data = json.loads(json_str)
+                        logger.info(f"✅ Detected intent: {intent_data}")
+                        return intent_data
+                    else:
+                        logger.warning(f"No JSON found in response on attempt {attempt + 1}")
+                        if attempt < max_retries - 1:
+                            continue
+                        else:
+                            return self._fallback_intent_detection(user_input, has_active_incident)
+                            
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error on attempt {attempt + 1}: {e}")
+                    if attempt < max_retries - 1:
+                        continue
+                    else:
+                        return self._fallback_intent_detection(user_input, has_active_incident)
             
-            try:
-                json_start = response.find('{')
-                json_end = response.rfind('}') + 1
-                if json_start != -1 and json_end > json_start:
-                    json_str = response[json_start:json_end]
-                    intent_data = json.loads(json_str)
-                    logger.info(f"Detected intent: {intent_data}")
-                    return intent_data
-            except Exception as e:
-                logger.error(f"Error parsing intent: {e}")
-            
-            # ✅ FIX: Ensure fallback always returns a dict
+            # If all retries fail, use fallback
             return self._fallback_intent_detection(user_input, has_active_incident)
             
         except Exception as e:
-            logger.error(f"Error in LLM intent detection: {e}")
-            # ✅ FIX: Always return a fallback intent
+            logger.error(f"❌ Error in LLM intent detection: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Always return fallback
             return self._fallback_intent_detection(user_input, has_active_incident)
         # ... rest of the method remains the same
     def _extract_context_keywords(self, conversation_history: List[Dict]) -> List[str]:
@@ -150,26 +171,48 @@ class LLMService:
         user_lower = user_input.lower()
         return any(keyword in user_lower for keyword in previous_keywords)
     
+    # In services/llm_service.py - Update the _fallback_intent_detection method
+
     def _fallback_intent_detection(self, user_input: str, has_active_incident: bool) -> Dict[str, Any]:
         """Fallback intent detection using keyword matching"""
         user_lower = user_input.lower().strip()
         
+        # Check for greetings
         if any(word in user_lower for word in ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']):
             return {"intent": "GREETING", "confidence": 0.9}
+        
+        elif any(word in user_lower for word in ['view incomplete', 'incomplete incident', 'continue incomplete', 'show incomplete']):
+            return {"intent": "ASK_INCOMPLETE_INCIDENT", "confidence": 0.9}
+    
+    # Check for track incident
         elif any(word in user_lower for word in ['track', 'check', 'status', 'view incident', 'my incident']):
             return {"intent": "TRACK_INCIDENT", "confidence": 0.8}
+        
+        # Check for incident ID - but NOT when we're expecting incomplete incident
+        elif re.search(r'INC\d+', user_input):
+            # Check if this is likely a response to "view incomplete incident" prompt
+            incident_id = re.search(r'INC\d+', user_input).group()
+            return {"intent": "PROVIDE_INCIDENT_ID", "confidence": 0.9, "extracted_incident_id": incident_id}
+        # Check for close incident
         elif any(word in user_lower for word in ['close', 'finish', 'done', 'complete incident', 'end incident']):
             return {"intent": "CLOSE_INCIDENT", "confidence": 0.8}
+        
+        # Check for clear session
         elif any(word in user_lower for word in ['clear', 'exit', 'end session', 'start fresh', 'reset', 'new session', 'start', 'restart']):
             return {"intent": "CLEAR_SESSION", "confidence": 0.8}
+        
+        # Check for incident ID
         elif re.search(r'INC\d+', user_input):
             incident_id = re.search(r'INC\d+', user_input).group()
             return {"intent": "PROVIDE_INCIDENT_ID", "confidence": 0.9, "extracted_incident_id": incident_id}
+        
+        # Check for previous solution
         elif any(word in user_lower for word in ['previous', 'last', 'solution', 'view solution']):
             return {"intent": "ASK_PREVIOUS_SOLUTION", "confidence": 0.8}
+        
+        # Default to continue or new incident
         else:
             return {"intent": "CONTINUE_INCIDENT" if has_active_incident else "NEW_INCIDENT", "confidence": 0.6}
-    
     def generate_greeting_response(self, user_input: str, conversation_history: List[Dict]) -> str:
         """Generate greeting response"""
         from utils.prompts import GREETING_RESPONSE_PROMPT
@@ -494,5 +537,31 @@ class LLMService:
         )
         
         return self.generate_response(prompt, temperature=0.7)
+    def generate_not_technical_issue_response(self, user_input: str, conversation_history: List[Dict]) -> str:
+        """Generate response when user query is not a technical IT issue"""
+        from utils.prompts import GENERAL_QUERY_PROMPT
+        
+        conv_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-5:]])
+        
+        prompt = f"""The user said: "{user_input}"
+
+    This doesn't appear to be a technical IT support issue that requires an incident ticket.
+
+    Generate a polite response that:
+    1. Acknowledges their message
+    2. Explains you're an IT helpdesk assistant for technical issues
+    3. Asks if they have any IT-related problems (email, VPN, password, software, etc.)
+    4. Be helpful and friendly
+
+    Conversation history:
+    {conv_text}
+
+    Provide only the response text, no JSON."""
+        
+        response = self.generate_response(prompt, temperature=0.7)
+        return response
+
+
+
 # Global LLM service instance
 llm_service = LLMService()

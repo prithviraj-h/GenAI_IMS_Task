@@ -163,7 +163,7 @@ class IncidentService:
                 return self._handle_new_incident(user_input, session_id, conversation_history)
             
             if awaiting_response == 'previous_solution_id':
-                return self._handle_previous_solution_id(user_input, session_id, conversation_history, active_incidents)
+                return self._handle_previous_solution_id(user_input, session_id, conversation_history, [])
             
             if awaiting_response == 'incident_id_selection':
                 return self._handle_incident_selection(user_input, session_id, conversation_history, active_incidents)

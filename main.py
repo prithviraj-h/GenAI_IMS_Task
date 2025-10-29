@@ -5,18 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 import logging
-import gc  # ADD THIS
-import psutil  # ADD THIS
+import gc
+import psutil
 
 from core.config import settings
 from db.mongo import mongo_client
 from db.chroma import chroma_client
 from services.kb_service import kb_service
+from services.embedding_wrapper import embedding_service  # ✅ IMPORT embedding_service
 from api import chat, admin
 from api.incidents import router as incident_router
 
 # ---------------- Memory Optimization ----------------
-# ADD THESE LINES FOR RENDER COMPATIBILITY
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:False"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -36,40 +36,70 @@ KB_FILE = os.path.join(BASE_DIR, "knowledge_base", "docs", "kb_data.txt")
 async def lifespan(app: FastAPI):
     """Lifecycle manager: handles startup/shutdown"""
     logger.info("🚀 Starting application...")
-
+    
     try:
-        # ADD: Force garbage collection before starting services
+        # Force garbage collection before starting services
         gc.collect()
         
         # Connect to MongoDB
+        logger.info("📡 Connecting to MongoDB...")
         mongo_client.connect()
-        logger.info("✅ MongoDB connected")
-
+        logger.info("✅ MongoDB connected successfully")
+        
         # Connect to ChromaDB
+        logger.info("📚 Connecting to ChromaDB...")
         chroma_client.connect()
-        logger.info("✅ ChromaDB connected")
-
+        logger.info("✅ ChromaDB connected successfully")
+        
         # Initialize Knowledge Base if not already populated
         if os.path.exists(KB_FILE):
+            logger.info(f"📖 Checking KB file: {KB_FILE}")
             existing_entries = chroma_client.get_all_entries()
+            logger.info(f"📊 Found {len(existing_entries)} existing KB entries in ChromaDB")
+            
             if not existing_entries:
-                logger.info("📘 Initializing knowledge base...")
-                kb_service.initialize_kb_from_file(KB_FILE)
-                logger.info("✅ Knowledge base initialized")
+                logger.info("📘 KB empty - Initializing knowledge base...")
+                success = kb_service.initialize_kb_from_file(KB_FILE)
+                if success:
+                    # Verify initialization
+                    new_entries = chroma_client.get_all_entries()
+                    logger.info(f"✅ Knowledge base initialized with {len(new_entries)} entries")
+                else:
+                    logger.error("❌ Failed to initialize knowledge base")
             else:
-                logger.info(f"ℹ️ KB already has {len(existing_entries)} entries")
+                logger.info(f"ℹ️  KB already initialized with {len(existing_entries)} entries:")
+                for entry in existing_entries[:3]:  # Show first 3 entries
+                    logger.info(f"   - {entry.get('id')}: {entry.get('metadata', {}).get('use_case', 'N/A')[:50]}")
         else:
-            logger.warning(f"⚠️ KB file not found at: {KB_FILE}")
-
+            logger.warning(f"⚠️  KB file not found at: {KB_FILE}")
+            logger.warning(f"⚠️  Current directory: {os.getcwd()}")
+            logger.warning(f"⚠️  Files in knowledge_base/docs/:")
+            kb_docs_dir = os.path.join(BASE_DIR, "knowledge_base", "docs")
+            if os.path.exists(kb_docs_dir):
+                logger.warning(f"    {os.listdir(kb_docs_dir)}")
+        
+        # ✅ FIX: Test embedding service correctly
+        logger.info("🧪 Testing embedding service...")
+        test_embedding = embedding_service.generate_embedding("test query")  # ✅ Use imported service
+        if test_embedding:
+            logger.info(f"✅ Embedding service working (dim: {len(test_embedding)})")
+        else:
+            logger.error("❌ Embedding service NOT working")
+        
+        logger.info("🎉 Application startup complete")
+        
     except Exception as e:
-        logger.error(f"❌ Error during startup: {e}")
+        logger.error(f"❌ CRITICAL ERROR during startup: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise
-
+    
     yield  # --- app runs here ---
-
+    
     # Shutdown logic
+    logger.info("🛑 Shutting down application...")
     mongo_client.disconnect()
-    logger.info("🛑 Application shutdown complete.")
+    logger.info("✅ Application shutdown complete")
 
 
 # ---------------- App Initialization ----------------
@@ -82,7 +112,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # can restrict later if needed
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,13 +147,10 @@ async def admin_page():
     return HTMLResponse("<h2>Admin frontend not found</h2>", status_code=404)
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "version": settings.PROJECT_VERSION}
+# ✅ REMOVED: /health endpoint (as requested)
 
 
-# ADD: Memory monitoring endpoint for debugging
+# Memory monitoring endpoint for debugging
 @app.get("/api/memory-status")
 async def memory_status():
     """Monitor memory usage (for debugging)"""

@@ -1,14 +1,4 @@
-#backend/db/mongo.py
-from pymongo import MongoClient, ASCENDING
-from pymongo.errors import ConnectionFailure
-from core.config import settings
-from typing import Optional, Dict, List, Any
-from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
-
-
+# backend/db/mongo.py
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 from core.config import settings
@@ -26,19 +16,36 @@ class MongoDBClient:
         self.sessions_collection = None
         
     def connect(self):
-        """Connect to MongoDB with SSL support"""
+        """Connect to MongoDB with environment-aware SSL support"""
         try:
-            # Improved connection for MongoDB Atlas
-            self.client = MongoClient(
-                settings.MONGO_URI,
-                tls=True,
-                # Remove tlsAllowInvalidCertificates for Atlas
-                retryWrites=True,
-                w='majority',
-                serverSelectionTimeoutMS=30000,  # Increased timeout
-                connectTimeoutMS=30000,
-                socketTimeoutMS=30000
-            )
+            logger.info(f"🔌 Connecting to MongoDB...")
+            logger.info(f"   Environment: {'PRODUCTION' if settings.is_production else 'DEVELOPMENT'}")
+            logger.info(f"   TLS Enabled: {settings.MONGO_TLS}")
+            
+            # Configure connection based on environment
+            if settings.is_production:
+                # Production (Render with MongoDB Atlas)
+                logger.info("📡 Using production MongoDB configuration")
+                self.client = MongoClient(
+                    settings.MONGO_URI,
+                    tls=True,
+                    retryWrites=True,
+                    w='majority',
+                    serverSelectionTimeoutMS=30000,
+                    connectTimeoutMS=30000,
+                    socketTimeoutMS=30000
+                )
+            else:
+                # Local Docker development
+                logger.info("🏠 Using local Docker MongoDB configuration")
+                self.client = MongoClient(
+                    settings.MONGO_URI,
+                    tls=False,
+                    directConnection=True,
+                    serverSelectionTimeoutMS=5000,
+                    connectTimeoutMS=10000,
+                    socketTimeoutMS=10000
+                )
             
             # Test connection
             self.client.admin.command('ping')
@@ -51,7 +58,7 @@ class MongoDBClient:
             # Create indexes
             self._create_indexes()
             
-            logger.info("✅ Connected to MongoDB successfully")
+            logger.info(f"✅ Connected to MongoDB database: {settings.MONGO_DB}")
             
         except Exception as e:
             logger.error(f"❌ Failed to connect to MongoDB: {e}")
@@ -72,7 +79,7 @@ class MongoDBClient:
         """Disconnect from MongoDB"""
         if self.client:
             self.client.close()
-            logger.info("Disconnected from MongoDB")
+            logger.info("🔌 Disconnected from MongoDB")
     
     # Incident Operations
     def create_incident(self, incident_data: Dict[str, Any]) -> bool:
@@ -107,18 +114,6 @@ class MongoDBClient:
         except Exception as e:
             logger.error(f"Error updating incident: {e}")
             return False
-    
-    def get_incidents_by_filter(self, filter_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Get incidents by filter"""
-        try:
-            incidents = list(self.incidents_collection.find(filter_dict))
-            for incident in incidents:
-                if '_id' in incident:
-                    incident['_id'] = str(incident['_id'])
-            return incidents
-        except Exception as e:
-            logger.error(f"Error getting incidents: {e}")
-            return []
     
     def get_all_incidents(self) -> List[Dict[str, Any]]:
         """Get all incidents sorted by creation date (newest first)"""

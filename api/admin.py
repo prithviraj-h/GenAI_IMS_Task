@@ -640,3 +640,96 @@ async def add_kb_entry(entry_data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error adding KB entry: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+    # Add these debugging endpoints to api/admin.py (at the end before last line)
+
+@router.get("/debug/system-status")
+async def debug_system_status():
+    """Comprehensive system status check"""
+    try:
+        from services.embedding_wrapper import embedding_service
+        
+        # Test MongoDB
+        mongo_status = "OK" if mongo_client.client else "NOT CONNECTED"
+        
+        # Test ChromaDB
+        try:
+            chroma_entries = chroma_client.get_all_entries()
+            chroma_status = f"OK - {len(chroma_entries)} entries"
+        except Exception as e:
+            chroma_status = f"ERROR: {str(e)}"
+        
+        # Test embedding service
+        try:
+            test_emb = embedding_service.generate_embedding("test")
+            embedding_status = f"OK - dim: {len(test_emb)}" if test_emb else "FAILED"
+        except Exception as e:
+            embedding_status = f"ERROR: {str(e)}"
+        
+        # Test LLM service
+        try:
+            from services.llm_service import llm_service
+            test_response = llm_service.generate_response("Say 'test'", temperature=0.1)
+            llm_status = "OK" if test_response else "FAILED"
+        except Exception as e:
+            llm_status = f"ERROR: {str(e)}"
+        
+        # Check KB file
+        kb_file_status = "EXISTS" if os.path.exists(kb_service.kb_file_path) else "NOT FOUND"
+        
+        return {
+            "mongodb": mongo_status,
+            "chromadb": chroma_status,
+            "embedding_service": embedding_status,
+            "llm_service": llm_status,
+            "kb_file": kb_file_status,
+            "kb_file_path": kb_service.kb_file_path,
+            "environment": settings.ENVIRONMENT
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/debug/test-kb-search")
+async def debug_test_kb_search(query: str = "outlook not opening"):
+    """Test KB search functionality"""
+    try:
+        logger.info(f"Testing KB search with query: {query}")
+        result = kb_service.search_kb(query)
+        
+        return {
+            "query": query,
+            "best_match_found": result['best_match'] is not None,
+            "best_match": result['best_match'],
+            "highest_similarity": result.get('highest_enhanced_similarity', 0),
+            "total_matches": len(result.get('matches', [])),
+            "all_matches": result.get('matches', [])
+        }
+    except Exception as e:
+        logger.error(f"Error testing KB search: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+@router.get("/debug/test-intent-detection")
+async def debug_test_intent_detection(query: str = "hello"):
+    """Test intent detection"""
+    try:
+        from services.llm_service import llm_service
+        
+        intent = llm_service.detect_intent(
+            user_input=query,
+            conversation_history=[],
+            has_active_incident=False,
+            session_id="test-session"
+        )
+        
+        return {
+            "query": query,
+            "detected_intent": intent,
+            "is_valid": intent is not None and 'intent' in intent
+        }
+    except Exception as e:
+        logger.error(f"Error testing intent detection: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}

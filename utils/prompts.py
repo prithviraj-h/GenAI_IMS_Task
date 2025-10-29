@@ -22,6 +22,8 @@ Guidelines:
 7. Ask one question at a time
 8. Use context and intelligence to understand user intent"""
 
+# Replace INTENT_DETECTION_PROMPT in utils/prompts.py with this:
+
 INTENT_DETECTION_PROMPT = """Analyze the user's message to detect their intent. Consider the conversation context.
 
 User Message: {user_input}
@@ -37,79 +39,68 @@ Current Context:
 CRITICAL RULES FOR INTENT DETECTION:
 
 1. **ASK_INCIDENT_TYPE vs NEW_INCIDENT - VERY IMPORTANT:**
-   
-   **ASK_INCIDENT_TYPE** (User wants to create incident but hasn't described the problem):
-   - "I want to create a new incident"
-   - "create a new incident"
-   - "create incident"
-   - "I want to create a new incident for:" (ends with colon, no actual issue)
-   - "I want to create a new incident for my" (incomplete sentence)
-   - "new incident"
-   - "report an issue" (but doesn't say what issue)
-   
-   **NEW_INCIDENT** (User describes an actual technical problem):
-   - "I want to create a new incident for outlook not working"
-   - "create incident for VPN issue"
-   - "outlook is not opening"
-   - "VPN connection failed"
-   - "password reset needed"
-   - "can't access email"
-   
-   **Key difference**: ASK_INCIDENT_TYPE = intent to create but NO problem description
-                       NEW_INCIDENT = actual problem described
+ 
+  **ASK_INCIDENT_TYPE** (User wants to create incident but hasn't described the problem):
+  - "I want to create a new incident"
+  - "create a new incident"
+  - "create incident"
+  - "I want to create a new incident for:" (ends with colon, no actual issue)
+  - "I want to create a new incident for my" (incomplete sentence)
+  - "new incident"
+  - "report an issue" (but doesn't say what issue)
+ 
+  **NEW_INCIDENT** (User describes an actual technical problem):
+  - "I want to create a new incident for outlook not working"
+  - "create incident for VPN issue"
+  - "outlook is not opening"
+  - "VPN connection failed"
+  - "password reset needed"
+  - "can't access email"
 
 2. **If user says "bye", "goodbye", "thanks", "thank you"**:
-   - Classify as GREETING or GENERAL_QUERY
-   - Do NOT close any incidents
-   - Respond politely
+  - Classify as GREETING or GENERAL_QUERY
+  - Do NOT close any incidents
 
 3. **CLOSE_INCIDENT** should ONLY be used when user EXPLICITLY says:
-   - "close incident"
-   - "close this incident"
-   - "mark as closed"
-   - "I want to close"
-   - "finish this incident"
-   
-   ❌ DO NOT treat as CLOSE_INCIDENT:
-   - "bye", "goodbye", "thank you", "thanks", "ok", "okay"
+  - "close incident"
+  - "close this incident"
+  - "mark as closed"
 
 4. **CONTINUE_INCIDENT takes priority** when has_active_incident is TRUE and user provides:
-   - Single word answers (e.g., "windows", "cisco", "office365")
-   - "keep" or "ignore" responses
-   - Short phrases answering questions
-   - Email addresses, error messages, "no error"
+  - Single word answers
+  - Short phrases answering questions
+5. **ASK_INCOMPLETE_INCIDENT** (User wants to continue a previous incomplete incident):
+   - "view incomplete incident"
+   - "incomplete incident"
+   - "continue my incident"
+   - "show incomplete tickets"
+
+6. **If conversation history shows bot asked for "incomplete incident ID"**, then:
+   - Any message with INC should be ASK_INCOMPLETE_INCIDENT
+   - NOT PROVIDE_INCIDENT_ID
+
+7. **PROVIDE_INCIDENT_ID** should be used for:
+   - Tracking incidents when no specific "incomplete" context
+   - General incident status checks
 
 Detect the following intents:
-1. GREETING - User greeting (hi, hello, bye, thanks)
-2. GREETING_CONTEXT - Greeting with active incident
-3. TRACK_INCIDENT - Check status of existing incident
-4. ASK_INCIDENT_TYPE - User wants to create incident but NO problem described
-5. NEW_INCIDENT - User describes actual technical problem
-6. CLOSE_INCIDENT - User EXPLICITLY wants to close incident
-7. CLEAR_SESSION - Clear session/start fresh
-8. CONTINUE_INCIDENT - Providing info for current incident
-9. GENERAL_QUERY - General question
-10. UNRELATED_QUERY - Off-topic with active incident
-11. PROVIDE_INCIDENT_ID - Providing incident ID
-12. ASK_INCOMPLETE_INCIDENT - View/continue incomplete incident
-13. ASK_PREVIOUS_SOLUTION - View previous solution
+1. GREETING - User greeting
+2. TRACK_INCIDENT - Check status
+3. ASK_INCIDENT_TYPE - Wants to create but NO problem described
+4. NEW_INCIDENT - Describes actual technical problem
+5. CLOSE_INCIDENT - Explicitly wants to close
+6. CLEAR_SESSION - Clear session
+7. CONTINUE_INCIDENT - Providing info
+8. GENERAL_QUERY - General question
+9. PROVIDE_INCIDENT_ID - Providing incident ID
+10. ASK_INCOMPLETE_INCIDENT - View/continue incomplete incident
 
-Examples:
-- "I want to create a new incident" → ASK_INCIDENT_TYPE
-- "create a new incident for:" → ASK_INCIDENT_TYPE
-- "create incident for outlook not working" → NEW_INCIDENT
-- "outlook is not opening" → NEW_INCIDENT
-- "bye" → GREETING (NOT CLOSE_INCIDENT)
-
-Respond in JSON format:
-{
-    "intent": "PRIMARY_INTENT",
-    "confidence": 0.0-1.0,
-    "secondary_intent": "SECONDARY_INTENT or null",
-    "extracted_incident_id": "incident_id or null",
-    "reasoning": "brief explanation",
-    "requires_clarification": true/false
-}"""
+Respond in JSON format with these exact keys:
+{{
+   "intent": "PRIMARY_INTENT",
+   "confidence": 0.9,
+   "reasoning": "brief explanation"
+}}"""
 
 GREETING_RESPONSE_PROMPT = """Generate a warm greeting response and ask how you can help.
 

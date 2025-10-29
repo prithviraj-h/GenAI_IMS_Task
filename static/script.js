@@ -61,6 +61,8 @@ async function loadInitialGreeting() {
         addMessage("Hello! How can I help you today?", 'bot');
     }
 }
+// In static/script.js - Update the handleActionButton function
+
 function handleActionButton(button) {
     console.log('Action button clicked:', button.getAttribute('data-value'));
     
@@ -69,10 +71,18 @@ function handleActionButton(button) {
     // For KEEP/IGNORE buttons, use exact uppercase
     if (value === 'keep' || value === 'ignore') {
         document.getElementById('userInput').value = value.toUpperCase();
-    } 
-    // For incident creation, use the exact phrase
-    else if (value === 'create a incident') {
-        document.getElementById('userInput').value = 'I want to create a new incident for:';
+    }
+    // ✅ FIX: For "view incomplete incident" - send the exact phrase
+    else if (value === 'view incomplete incident') {
+        document.getElementById('userInput').value = 'view incomplete incident';
+    }
+    // For track incident
+    else if (value === 'track a incident' || value.includes('track')) {
+        document.getElementById('userInput').value = 'track incident';
+    }
+    // For create incident
+    else if (value === 'create a incident' || value.includes('create')) {
+        document.getElementById('userInput').value = 'I want to create a new incident';
     }
     // For other buttons, use the value as is
     else {

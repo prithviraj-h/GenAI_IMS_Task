@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class KBService:
     def __init__(self):
-        self.similarity_threshold = 0.65
+        self.similarity_threshold = 0.35
         self.kb_file_path = self._get_kb_file_path()  # Initialize file path
 
     def _get_kb_file_path(self):
@@ -207,13 +207,18 @@ class KBService:
         except Exception as e:
             logger.error(f"Error updating KB file header: {e}")
     
-    def search_kb(self, query: str, n_results: int = 5) -> Dict[str, Any]:  # Increased n_results
+    def search_kb(self, query: str, n_results: int = 5) -> Dict[str, Any]:
         """Search knowledge base for similar entries with improved matching"""
         try:
+            logger.info(f"🔍 Searching KB for: '{query}'")
+            
             query_embedding = embedding_service.generate_query_embedding(query)
             
             if not query_embedding:
+                logger.error("❌ Failed to generate query embedding")
                 return {"matches": [], "best_match": None}
+            
+            logger.info(f"✅ Generated query embedding (dim: {len(query_embedding)})")
             
             results = chroma_client.search_similar(query_embedding, n_results)
             
@@ -222,6 +227,8 @@ class KBService:
             highest_similarity = 0
             
             if results and results['ids'] and results['ids'][0]:
+                logger.info(f"📊 Found {len(results['ids'][0])} potential matches")
+                
                 for i in range(len(results['ids'][0])):
                     kb_id = results['ids'][0][i]
                     distance = results['distances'][0][i]
@@ -240,10 +247,10 @@ class KBService:
                     keyword_overlap = len(use_case_words.intersection(query_words)) / len(use_case_words.union(query_words)) if use_case_words.union(query_words) else 0
                     
                     # Enhanced similarity with keyword bonus
-                    enhanced_similarity = similarity + (keyword_overlap * 0.2)
-                    enhanced_similarity = min(enhanced_similarity, 1.0)  # Cap at 1.0
+                    enhanced_similarity = similarity + (keyword_overlap * 0.3)  # ✅ INCREASED bonus
+                    enhanced_similarity = min(enhanced_similarity, 1.0)
                     
-                    logger.info(f"KB Match: {kb_id} - Similarity: {similarity:.3f}, Enhanced: {enhanced_similarity:.3f}, Keywords: {keyword_overlap:.3f}")
+                    logger.info(f"🎯 {kb_id}: Base={similarity:.3f}, Enhanced={enhanced_similarity:.3f}, Keywords={keyword_overlap:.3f}, Use Case: {use_case[:50]}")
                     
                     match_data = {
                         'kb_id': kb_id,
@@ -258,21 +265,17 @@ class KBService:
                     
                     matches.append(match_data)
                     
-                    # Use enhanced similarity for best match determination
                     if enhanced_similarity > highest_similarity:
                         highest_similarity = enhanced_similarity
                         best_match = match_data
             
-            # Adjust threshold dynamically based on match quality
-            dynamic_threshold = self.similarity_threshold
-            if highest_similarity > 0.4 and highest_similarity < self.similarity_threshold:
-                # If we have a decent match but below threshold, consider context
-                dynamic_threshold = highest_similarity - 0.1
+            # ✅ CHANGED: Dynamic threshold adjustment
+            dynamic_threshold = max(0.25, self.similarity_threshold - 0.1)  # Lower minimum to 0.25
             
             if best_match and best_match['enhanced_similarity'] >= dynamic_threshold:
-                logger.info(f"✅ Best KB match found: {best_match['kb_id']} with enhanced similarity {best_match['enhanced_similarity']:.3f}")
+                logger.info(f"✅ MATCH FOUND: {best_match['kb_id']} with similarity {best_match['enhanced_similarity']:.3f} (threshold: {dynamic_threshold:.3f})")
             else:
-                logger.info(f"❌ No KB match found above dynamic threshold {dynamic_threshold:.3f}")
+                logger.warning(f"❌ NO MATCH: Best similarity {highest_similarity:.3f} below threshold {dynamic_threshold:.3f}")
                 best_match = None
             
             return {
@@ -282,7 +285,9 @@ class KBService:
             }
             
         except Exception as e:
-            logger.error(f"Error searching KB: {e}")
+            logger.error(f"❌ Error searching KB: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"matches": [], "best_match": None, "highest_enhanced_similarity": 0}
     
     def get_kb_entry(self, kb_id: str) -> Optional[Dict[str, Any]]:
