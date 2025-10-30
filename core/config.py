@@ -42,10 +42,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     # Jina AI Embeddings Configuration
-    JINA_API_KEY: str = os.getenv(
-        "JINA_API_KEY", 
-        "jina_f150959bc77a423a91d8f0e06c67fed54c5gR4NOpBdi88LOeUR6sNAhg-1_"
-    )
+    JINA_API_KEY: str = os.getenv("JINA_API_KEY", "")
+
     JINA_MODEL: str = "jina-embeddings-v2-base-en"
     
     # LLM settings
