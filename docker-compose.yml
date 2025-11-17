@@ -1,57 +1,43 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  # -----------------------------
-  # MongoDB Database
-  # -----------------------------
-  mongodb:
-    image: mongo:7.0
-    container_name: incident-mongodb
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - app-network
-    command: [
-      "--quiet",
-      "--logpath", "/dev/null",
-      "--setParameter", "logLevel=0"
-    ]
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 2s
-      retries: 5
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # -----------------------------
-  # FastAPI Backend
-  # -----------------------------
   app:
     build: .
     container_name: incident-app
     ports:
       - "8000:8000"
-    depends_on:
-      mongodb:
-        condition: service_healthy
     env_file:
-      - .env
+      - .env  # ✅ Load environment variables from .env file
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/incident_db
-      - CHROMA_PERSIST_DIR=/app/db/chroma
-      - ENVIRONMENT=development
-      - CHROMA_TELEMETRY_DISABLED=True
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB=incident_db
+    depends_on:
+      - mongodb
     networks:
       - app-network
     volumes:
-      - ./knowledge_base:/app/knowledge_base
+      - ./knowledge_base:/app/knowledge_base  # ✅ Mount KB directory
+
+  mongodb:
+    image: mongo:7.0
+    container_name: incident-mongodb
+    ports:
+      - "27018:27017"
+    command: [
+      "--quiet",
+      "--logpath", "/dev/null",  # ✅ Send logs to null (only shows errors in console)
+      "--setParameter", "logLevel=0"  # ✅ Minimal logging
+    ]
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+    # ✅ Disable health check logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   app-network:
