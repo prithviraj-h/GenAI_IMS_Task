@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ims-backend
+  labels:
+    app: ims-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ims-backend
+  template:
+    metadata:
+      labels:
+        app: ims-backend
+    spec:
+      containers:
+        - name: ims-backend
+          image: us-central1-docker.pkg.dev/key-line-478105-u5/ims-repo/ims-backend:v1
+          ports:
+            - containerPort: 8000
+          env:
+            # Other secrets
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: ims-app-secrets
+                  key: MONGO_URI
+            - name: MONGO_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ims-app-secrets
+                  key: MONGO_DB
+            - name: INCIDENT_COLLECTION
+              valueFrom:
+                secretKeyRef:
+                  name: ims-app-secrets
+                  key: INCIDENT_COLLECTION
+            - name: SESSION_COLLECTION
+              valueFrom:
+                secretKeyRef:
+                  name: ims-app-secrets
+                  key: SESSION_COLLECTION
+            - name: JINA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ims-app-secrets
+                  key: JINA_API_KEY
+            # New env for Google service account
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /secrets/google/key.json
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: google-service-key
+              mountPath: /secrets/google
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: google-service-key
+          secret:
+            secretName: google-service-key
